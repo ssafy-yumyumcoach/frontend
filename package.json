@@ -1,0 +1,34 @@
+{
+  "name": "temp_app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vueuse/core": "^14.1.0",
+    "apexcharts": "^5.3.6",
+    "axios": "^1.13.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-vue-next": "^0.556.0",
+    "pinia": "^3.0.4",
+    "radix-vue": "^1.9.17",
+    "tailwind-merge": "^3.4.0",
+    "vue": "^3.5.24",
+    "vue-router": "^4.6.3",
+    "vue3-apexcharts": "^1.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.5.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vue-tsc": "^2.1.10"
+  }
+}
