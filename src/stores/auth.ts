@@ -17,6 +17,10 @@ interface LoginResponse {
     userInfo: UserInfo;
 }
 
+interface WithdrawResponse {
+    message: string;
+}
+
 interface ErrorResponse {
     status: number;
     message?: string;
@@ -133,16 +137,31 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
-    async function withdraw(password: string): Promise<boolean> {
+    async function withdraw(password: string): Promise<string> {
         try {
             if (!refreshToken.value) {
                 throw new Error('인증 정보가 없습니다.');
             }
 
-            await api.post('/auth/withdraw', {
+            const payload = {
                 password,
                 refreshToken: refreshToken.value
-            });
+            };
+
+            // NOTE: 백엔드가 POST를 지원하지 않는 경우가 있어(405/메서드 불일치),
+            // 기본은 DELETE로 호출하고 필요 시 POST로 한 번 더 시도합니다.
+            let responseMessage = '회원 탈퇴가 완료되었습니다.';
+            try {
+                const response = await api.delete<WithdrawResponse>('/auth/withdraw', { data: payload });
+                if (response?.data?.message) responseMessage = response.data.message;
+            } catch (err: any) {
+                if (axios.isAxiosError(err) && err.response?.status === 405) {
+                    const response = await api.post<WithdrawResponse>('/auth/withdraw', payload);
+                    if (response?.data?.message) responseMessage = response.data.message;
+                } else {
+                    throw err;
+                }
+            }
 
             // Clear all auth data
             token.value = '';
@@ -152,7 +171,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.removeItem('refreshToken');
             localStorage.removeItem('user');
 
-            return true;
+            return responseMessage;
         } catch (error: any) {
             console.error('Withdrawal failed:', error);
 

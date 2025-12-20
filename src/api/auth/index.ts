@@ -49,5 +49,7 @@ export default {
     isEmailAvailable: (email: string) => api.get<CheckEmailResponse>('/auth/check-email', { params: { email } }),
     isUsernameAvailable: (username: string) => api.get<CheckUsernameResponse>('/auth/check-username', { params: { username } }),
     refreshToken: (data: RefreshTokenRequest) => api.post<RefreshTokenResponse>('/auth/refresh', data),
-    withdraw: (data: WithdrawRequest) => api.post<WithdrawResponse>('/auth/withdraw', data),
+    // NOTE: 백엔드가 DELETE로 탈퇴를 구현한 경우를 우선 지원합니다.
+    // axios의 delete는 body를 config.data로 전달해야 합니다.
+    withdraw: (data: WithdrawRequest) => api.delete<WithdrawResponse>('/auth/withdraw', { data }),
 };

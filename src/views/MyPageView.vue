@@ -212,8 +212,8 @@ const handleWithdrawalConfirm = async () => {
 
   isWithdrawing.value = true;
   try {
-    await authStore.withdraw(withdrawalPassword.value);
-    withdrawalDoneMessage.value = "회원 탈퇴가 완료되었습니다.";
+    const message = await authStore.withdraw(withdrawalPassword.value);
+    withdrawalDoneMessage.value = message || "회원 탈퇴가 완료되었습니다.";
     withdrawalStep.value = "done";
   } catch (error: any) {
     withdrawalErrorMessage.value = error?.message || "회원 탈퇴 중 오류가 발생했습니다.";
