@@ -25,6 +25,40 @@ const isEmailChecked = ref(false);
 const isEmailAvailable = ref(false);
 const emailCheckMessage = ref("");
 
+// Nickname Check State
+const isNicknameChecked = ref(false);
+const isNicknameAvailable = ref(false);
+const nicknameCheckMessage = ref("");
+
+const checkNickname = async () => {
+  if (!name.value) {
+    alert("닉네임을 입력해주세요.");
+    return;
+  }
+
+  try {
+    const response = await api.isUsernameAvailable(name.value);
+    isNicknameAvailable.value = response.data.available;
+    isNicknameChecked.value = true;
+
+    if (isNicknameAvailable.value) {
+      nicknameCheckMessage.value = "사용 가능한 닉네임입니다.";
+    } else {
+      nicknameCheckMessage.value = "이미 사용 중인 닉네임입니다.";
+    }
+  } catch (error: any) {
+    console.error(error);
+    alert("닉네임 중복 확인 중 오류가 발생했습니다.");
+  }
+};
+
+// Reset check when nickname changes
+const handleNicknameChange = () => {
+  isNicknameChecked.value = false;
+  isNicknameAvailable.value = false;
+  nicknameCheckMessage.value = "";
+};
+
 const checkEmail = async () => {
   if (!email.value) {
     alert("이메일을 입력해주세요.");
@@ -70,6 +104,11 @@ const handleSubmit = async () => {
       // Validate Signup
       if (!isEmailChecked.value || !isEmailAvailable.value) {
         alert("이메일 중복 확인을 해주세요.");
+        return;
+      }
+
+      if (!isNicknameChecked.value || !isNicknameAvailable.value) {
+        alert("닉네임 중복 확인을 해주세요.");
         return;
       }
 
@@ -177,14 +216,32 @@ const handleSubmit = async () => {
         <!-- Form -->
         <form @submit.prevent="handleSubmit" class="space-y-5">
           <div v-if="!isLogin" class="space-y-2">
-            <Label class="text-zinc-300"> 이름 </Label>
-            <Input
-              type="text"
-              placeholder="홍길동"
-              v-model="name"
-              class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700"
-              :required="!isLogin"
-            />
+            <Label class="text-zinc-300"> 닉네임 </Label>
+            <div class="flex gap-2">
+              <Input
+                type="text"
+                placeholder="홍길동"
+                v-model="name"
+                @input="handleNicknameChange"
+                class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700 flex-1"
+                :required="!isLogin"
+              />
+              <Button 
+                type="button" 
+                @click="checkNickname"
+                variant="outline"
+                class="h-12 whitespace-nowrap bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+              >
+                중복 확인
+              </Button>
+            </div>
+            <!-- Validation Message -->
+             <p v-if="nicknameCheckMessage" 
+               class="text-sm"
+               :class="isNicknameAvailable ? 'text-emerald-500' : 'text-red-500'"
+            >
+              {{ nicknameCheckMessage }}
+            </p>
           </div>
 
           <div class="space-y-2">
