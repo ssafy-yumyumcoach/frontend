@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import api from "@/api/auth";
@@ -19,6 +19,24 @@ const confirmPassword = ref("");
 const name = ref("");
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
+const flashMessage = ref<{ type: "error" | "success"; message: string } | null>(null);
+
+onMounted(() => {
+  try {
+    const raw = sessionStorage.getItem("flash_message");
+    if (!raw) return;
+    sessionStorage.removeItem("flash_message");
+    const parsed = JSON.parse(raw) as { type?: unknown; message?: unknown };
+    if (typeof parsed?.message === "string") {
+      flashMessage.value = {
+        type: parsed.type === "success" ? "success" : "error",
+        message: parsed.message,
+      };
+    }
+  } catch {
+    // ignore
+  }
+});
 
 // Email Check State
 const isEmailChecked = ref(false);
@@ -211,6 +229,19 @@ const handleSubmit = async () => {
         <div class="space-y-2">
           <h1 class="text-4xl text-white">{{ isLogin ? "로그인" : "회원가입" }}</h1>
           <p class="text-zinc-400">{{ isLogin ? "계정에 로그인하세요" : "새로운 계정을 만드세요" }}</p>
+        </div>
+
+        <!-- Flash Message (ex: session expired) -->
+        <div
+          v-if="flashMessage"
+          class="rounded-lg border px-4 py-3 text-sm"
+          :class="
+            flashMessage.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-500/10 border-red-500/30 text-red-300'
+          "
+        >
+          {{ flashMessage.message }}
         </div>
 
         <!-- Form -->

@@ -164,12 +164,16 @@ const handleHealthInfoSave = () => {
 // Withdrawal State
 const showWithdrawalDialog = ref(false);
 const withdrawalPassword = ref("");
-const withdrawalStep = ref<"password" | "final-confirm">("password");
+const withdrawalStep = ref<"password" | "final-confirm" | "done">("password");
 const isWithdrawing = ref(false);
+const withdrawalErrorMessage = ref<string>("");
+const withdrawalDoneMessage = ref<string>("");
 
 const handleWithdrawClick = () => {
   showWithdrawalDialog.value = true;
   withdrawalStep.value = "password";
+  withdrawalErrorMessage.value = "";
+  withdrawalDoneMessage.value = "";
 };
 
 const handleWithdrawalCancel = () => {
@@ -177,6 +181,8 @@ const handleWithdrawalCancel = () => {
   withdrawalPassword.value = "";
   withdrawalStep.value = "password";
   isWithdrawing.value = false;
+  withdrawalErrorMessage.value = "";
+  withdrawalDoneMessage.value = "";
 };
 
 const handleDialogBackdropClick = (event: MouseEvent) => {
@@ -187,8 +193,9 @@ const handleDialogBackdropClick = (event: MouseEvent) => {
 };
 
 const goToWithdrawalFinalConfirm = () => {
+  withdrawalErrorMessage.value = "";
   if (!withdrawalPassword.value) {
-    alert("비밀번호를 입력해주세요.");
+    withdrawalErrorMessage.value = "비밀번호를 입력해주세요.";
     return;
   }
   withdrawalStep.value = "final-confirm";
@@ -196,8 +203,9 @@ const goToWithdrawalFinalConfirm = () => {
 
 const handleWithdrawalConfirm = async () => {
   if (isWithdrawing.value) return;
+  withdrawalErrorMessage.value = "";
   if (!withdrawalPassword.value) {
-    alert("비밀번호를 입력해주세요.");
+    withdrawalErrorMessage.value = "비밀번호를 입력해주세요.";
     withdrawalStep.value = "password";
     return;
   }
@@ -205,16 +213,20 @@ const handleWithdrawalConfirm = async () => {
   isWithdrawing.value = true;
   try {
     await authStore.withdraw(withdrawalPassword.value);
-    alert("회원 탈퇴가 완료되었습니다.");
-    router.push("/");
+    withdrawalDoneMessage.value = "회원 탈퇴가 완료되었습니다.";
+    withdrawalStep.value = "done";
   } catch (error: any) {
-    alert(error.message || "회원 탈퇴 중 오류가 발생했습니다.");
+    withdrawalErrorMessage.value = error?.message || "회원 탈퇴 중 오류가 발생했습니다.";
+    // 실패 시에는 모달을 닫지 않고 그대로 유지(재시도 가능)
   } finally {
     isWithdrawing.value = false;
-    showWithdrawalDialog.value = false;
-    withdrawalPassword.value = "";
-    withdrawalStep.value = "password";
+    // success일 때만 done 단계로 이동 (위 try에서 처리)
   }
+};
+
+const finishWithdrawalFlow = () => {
+  handleWithdrawalCancel();
+  router.push("/");
 };
 
 
@@ -534,6 +546,13 @@ const getDifficultyColor = (difficulty: string) => {
             </p>
           </div>
 
+          <div
+            v-if="withdrawalErrorMessage"
+            class="bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg px-4 py-3 text-sm"
+          >
+            {{ withdrawalErrorMessage }}
+          </div>
+
           <div class="space-y-2">
             <Label class="text-zinc-300">비밀번호</Label>
             <Input
@@ -564,12 +583,19 @@ const getDifficultyColor = (difficulty: string) => {
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="withdrawalStep === 'final-confirm'">
           <div class="space-y-2">
             <h3 class="text-2xl text-white">정말 탈퇴할까요?</h3>
             <p class="text-zinc-400">
               이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다.
             </p>
+          </div>
+
+          <div
+            v-if="withdrawalErrorMessage"
+            class="bg-red-500/10 border border-red-500/30 text-red-300 rounded-lg px-4 py-3 text-sm"
+          >
+            {{ withdrawalErrorMessage }}
           </div>
 
           <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 space-y-2">
@@ -600,6 +626,19 @@ const getDifficultyColor = (difficulty: string) => {
             >
               <span v-if="isWithdrawing">처리 중...</span>
               <span v-else>탈퇴 확정</span>
+            </Button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="space-y-2">
+            <h3 class="text-2xl text-white">탈퇴 완료</h3>
+            <p class="text-zinc-400">{{ withdrawalDoneMessage || "처리가 완료되었습니다." }}</p>
+          </div>
+
+          <div class="flex justify-end">
+            <Button type="button" @click="finishWithdrawalFlow" class="bg-emerald-500 hover:bg-emerald-600 text-white">
+              확인
             </Button>
           </div>
         </template>

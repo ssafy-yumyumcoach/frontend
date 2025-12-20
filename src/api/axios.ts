@@ -70,12 +70,36 @@ api.interceptors.response.use(
           return api(originalRequest);
         } else {
           processQueue(new Error('Token refresh failed'), null);
-          // Redirect to login
+          // Redirect to login (preserve a one-time message)
+          try {
+            sessionStorage.setItem(
+              'flash_message',
+              JSON.stringify({
+                type: 'error',
+                message: '세션이 만료되었습니다. 다시 로그인해주세요.',
+                at: Date.now(),
+              })
+            );
+          } catch {
+            // ignore storage errors
+          }
           window.location.href = '/';
           return Promise.reject(error);
         }
       } catch (refreshError) {
         processQueue(refreshError, null);
+        try {
+          sessionStorage.setItem(
+            'flash_message',
+            JSON.stringify({
+              type: 'error',
+              message: '세션이 만료되었습니다. 다시 로그인해주세요.',
+              at: Date.now(),
+            })
+          );
+        } catch {
+          // ignore storage errors
+        }
         window.location.href = '/';
         return Promise.reject(refreshError);
       } finally {
