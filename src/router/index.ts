@@ -44,6 +44,12 @@ const router = createRouter({
           component: () => import("@/views/CommunityView.vue"),
         },
         {
+          path: "community/:id",
+          name: "community-detail",
+          component: () => import("@/views/CommunityDetailView.vue"),
+        },
+
+        {
           path: "challenge-list",
           name: "challenge-list",
           component: () => import("@/views/ChallengeListView.vue"),
