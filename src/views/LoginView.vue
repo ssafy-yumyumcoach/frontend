@@ -20,16 +20,64 @@ const name = ref("");
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
 
+// Email Check State
+const isEmailChecked = ref(false);
+const isEmailAvailable = ref(false);
+const emailCheckMessage = ref("");
+
+const checkEmail = async () => {
+  if (!email.value) {
+    alert("이메일을 입력해주세요.");
+    return;
+  }
+  
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+    alert("올바른 이메일 형식이 아닙니다.");
+    return;
+  }
+
+  try {
+    const response = await api.isEmailAvailable(email.value);
+    // Adjust based on actual API response structure. 
+    // Assuming response.data.available is boolean.
+    isEmailAvailable.value = response.data.available;
+    isEmailChecked.value = true;
+
+    if (isEmailAvailable.value) {
+      emailCheckMessage.value = "사용 가능한 이메일입니다.";
+    } else {
+      emailCheckMessage.value = "이미 사용 중인 이메일입니다.";
+    }
+  } catch (error: any) {
+    console.error(error);
+    alert("이메일 중복 확인 중 오류가 발생했습니다.");
+  }
+};
+
+// Reset check when email changes
+const handleEmailChange = () => {
+  isEmailChecked.value = false;
+  isEmailAvailable.value = false;
+  emailCheckMessage.value = "";
+};
+
 const handleSubmit = async () => {
   try {
     if (isLogin.value) {
       await authStore.login({ email: email.value, password: password.value });
       router.push("/dashboard");
     } else {
+      // Validate Signup
+      if (!isEmailChecked.value || !isEmailAvailable.value) {
+        alert("이메일 중복 확인을 해주세요.");
+        return;
+      }
+
       if (password.value !== confirmPassword.value) {
         alert("비밀번호가 일치하지 않습니다.");
         return;
       }
+      
       await api.signUp({ 
         email: email.value, 
         password: password.value, 
@@ -141,13 +189,32 @@ const handleSubmit = async () => {
 
           <div class="space-y-2">
             <Label class="text-zinc-300"> 이메일 </Label>
-            <Input
-              type="email"
-              placeholder="your@email.com"
-              v-model="email"
-              class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700"
-              required
-            />
+            <div class="flex gap-2">
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                v-model="email"
+                @input="handleEmailChange"
+                class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700 flex-1"
+                required
+              />
+              <Button 
+                v-if="!isLogin"
+                type="button" 
+                @click="checkEmail"
+                variant="outline"
+                class="h-12 whitespace-nowrap bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+              >
+                중복 확인
+              </Button>
+            </div>
+            <!-- Validation Message -->
+            <p v-if="!isLogin && emailCheckMessage" 
+               class="text-sm"
+               :class="isEmailAvailable ? 'text-emerald-500' : 'text-red-500'"
+            >
+              {{ emailCheckMessage }}
+            </p>
           </div>
 
           <div class="space-y-2">
