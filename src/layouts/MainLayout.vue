@@ -34,7 +34,9 @@ const menuItems = [
 
 const activeMenu = computed(() => {
   const currentPath = route.path;
-  const item = menuItems.find((item) => item.path === currentPath);
+  const item = menuItems.find((item) => 
+    item.path === currentPath || currentPath.startsWith(`${item.path}/`)
+  );
   return item ? item.id : "dashboard";
 });
 
