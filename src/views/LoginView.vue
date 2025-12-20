@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { useAuthStore } from "@/stores/auth";
+import api from "@/api/auth";
 import { Eye, EyeOff, Utensils } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
@@ -8,6 +10,7 @@ import Label from "@/components/ui/Label.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 
 const router = useRouter();
+const authStore = useAuthStore();
 
 const isLogin = ref(true);
 const email = ref("");
@@ -17,15 +20,28 @@ const name = ref("");
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
 
-const handleSubmit = () => {
-  if (isLogin.value) {
-    console.log("로그인:", { email: email.value, password: password.value });
-    // 로그인 시 바로 대시보드로 (추후 구현)
-    router.push("/dashboard");
-  } else {
-    console.log("회원가입:", { name: name.value, email: email.value, password: password.value });
-    // 회원가입 시 온보딩 화면으로
-    router.push("/onboarding");
+const handleSubmit = async () => {
+  try {
+    if (isLogin.value) {
+      await authStore.login({ email: email.value, password: password.value });
+      router.push("/dashboard");
+    } else {
+      if (password.value !== confirmPassword.value) {
+        alert("비밀번호가 일치하지 않습니다.");
+        return;
+      }
+      await api.signUp({ 
+        email: email.value, 
+        password: password.value, 
+        username: name.value 
+      });
+      alert("회원가입이 완료되었습니다.");
+      // 회원가입 성공 시 온보딩 페이지로 이동
+      router.push("/onboarding");
+      isLogin.value = true;
+    }
+  } catch (error: any) {
+    alert(error.message || "작업 중 오류가 발생했습니다.");
   }
 };
 </script>

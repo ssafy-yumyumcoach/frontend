@@ -43,11 +43,11 @@ export interface WithdrawResponse {
 }
 
 export default {
-    login: (credentials: any) => api.post('/auth/sign-in', credentials),
-    logout: (data: { refreshToken: string }) => api.post('/auth/sign-out', data),
+    signIn: (credentials: any) => api.post('/auth/sign-in', credentials),
+    signOut: (data: { refreshToken: string }) => api.post('/auth/sign-out', data),
     signUp: (data: SignUpRequest) => api.post<SignUpResponse>('/auth/sign-up', data),
-    checkEmail: (email: string) => api.get<CheckEmailResponse>('/auth/check-email', { params: { email } }),
-    checkUsername: (username: string) => api.get<CheckUsernameResponse>('/auth/check-username', { params: { username } }),
+    isEmailAvailable: (email: string) => api.get<CheckEmailResponse>('/auth/check-email', { params: { email } }),
+    isUsernameAvailable: (username: string) => api.get<CheckUsernameResponse>('/auth/check-username', { params: { username } }),
     refreshToken: (data: RefreshTokenRequest) => api.post<RefreshTokenResponse>('/auth/refresh', data),
     withdraw: (data: WithdrawRequest) => api.post<WithdrawResponse>('/auth/withdraw', data),
 };
