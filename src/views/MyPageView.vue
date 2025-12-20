@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { Upload, LogOut, Save, Lock } from "lucide-vue-next";
+import { Upload, Save, Lock } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Label from "@/components/ui/Label.vue";
@@ -156,9 +156,7 @@ const handleHealthInfoSave = () => {
   });
 };
 
-const handleLogout = () => {
-  console.log("로그아웃");
-};
+
 
 const getDifficultyColor = (difficulty: string) => {
   switch (difficulty) {
@@ -238,14 +236,7 @@ const getDifficultyColor = (difficulty: string) => {
                 <Save class="w-4 h-4 mr-2" />
                 프로필 편집
               </Button>
-              <Button
-                @click="handleLogout"
-                variant="outline"
-                class="bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
-              >
-                <LogOut class="w-4 h-4 mr-2" />
-                로그아웃
-              </Button>
+
             </div>
           </div>
         </div>
