@@ -80,6 +80,41 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
+    async function refreshAccessToken(): Promise<boolean> {
+        try {
+            if (!refreshToken.value) {
+                return false;
+            }
+
+            const response = await api.post('/auth/refresh', {
+                refreshToken: refreshToken.value
+            });
+
+            const {
+                accessToken,
+                refreshToken: newRefreshToken,
+            } = response.data;
+
+            token.value = accessToken;
+            refreshToken.value = newRefreshToken;
+
+            localStorage.setItem('token', accessToken);
+            localStorage.setItem('refreshToken', newRefreshToken);
+
+            return true;
+        } catch (error) {
+            console.error('Token refresh failed:', error);
+            // Clear tokens on refresh failure
+            token.value = '';
+            refreshToken.value = '';
+            user.value = null;
+            localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('user');
+            return false;
+        }
+    }
+
     async function logout() {
         try {
             if (refreshToken.value) {
@@ -103,6 +138,7 @@ export const useAuthStore = defineStore('auth', () => {
         token,
         isAuthenticated,
         login,
-        logout
+        logout,
+        refreshAccessToken
     };
 });
