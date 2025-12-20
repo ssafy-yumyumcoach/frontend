@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { useAuthStore } from "@/stores/auth";
 import { Upload, Save, Lock } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
@@ -7,6 +9,9 @@ import Label from "@/components/ui/Label.vue";
 import Textarea from "@/components/ui/Textarea.vue";
 import Avatar from "@/components/ui/Avatar.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
+
+const router = useRouter();
+const authStore = useAuthStore();
 
 interface Badge {
   id: string;
@@ -156,6 +161,61 @@ const handleHealthInfoSave = () => {
   });
 };
 
+// Withdrawal State
+const showWithdrawalDialog = ref(false);
+const withdrawalPassword = ref("");
+const withdrawalStep = ref<"password" | "final-confirm">("password");
+const isWithdrawing = ref(false);
+
+const handleWithdrawClick = () => {
+  showWithdrawalDialog.value = true;
+  withdrawalStep.value = "password";
+};
+
+const handleWithdrawalCancel = () => {
+  showWithdrawalDialog.value = false;
+  withdrawalPassword.value = "";
+  withdrawalStep.value = "password";
+  isWithdrawing.value = false;
+};
+
+const handleDialogBackdropClick = (event: MouseEvent) => {
+  // 다이얼로그 배경(backdrop)을 클릭했을 때만 닫기
+  if (event.target === event.currentTarget) {
+    handleWithdrawalCancel();
+  }
+};
+
+const goToWithdrawalFinalConfirm = () => {
+  if (!withdrawalPassword.value) {
+    alert("비밀번호를 입력해주세요.");
+    return;
+  }
+  withdrawalStep.value = "final-confirm";
+};
+
+const handleWithdrawalConfirm = async () => {
+  if (isWithdrawing.value) return;
+  if (!withdrawalPassword.value) {
+    alert("비밀번호를 입력해주세요.");
+    withdrawalStep.value = "password";
+    return;
+  }
+
+  isWithdrawing.value = true;
+  try {
+    await authStore.withdraw(withdrawalPassword.value);
+    alert("회원 탈퇴가 완료되었습니다.");
+    router.push("/");
+  } catch (error: any) {
+    alert(error.message || "회원 탈퇴 중 오류가 발생했습니다.");
+  } finally {
+    isWithdrawing.value = false;
+    showWithdrawalDialog.value = false;
+    withdrawalPassword.value = "";
+    withdrawalStep.value = "password";
+  }
+};
 
 
 const getDifficultyColor = (difficulty: string) => {
@@ -426,6 +486,125 @@ const getDifficultyColor = (difficulty: string) => {
           </Button>
         </div>
       </div>
+
+      <!-- 섹션 4: 회원 탈퇴 -->
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-8 space-y-4">
+        <h2 class="text-2xl text-white">회원 탈퇴</h2>
+        
+        <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 space-y-2">
+          <p class="text-zinc-300 text-sm">
+            ⚠️ 회원 탈퇴 시 모든 데이터가 영구적으로 삭제되며 복구할 수 없습니다.
+          </p>
+          <ul class="text-zinc-400 text-sm space-y-1 ml-4 list-disc">
+            <li>프로필 정보 및 건강 데이터</li>
+            <li>식단 및 운동 기록</li>
+            <li>챌린지 참여 내역 및 뱃지</li>
+            <li>커뮤니티 게시글 및 댓글</li>
+          </ul>
+        </div>
+
+        <div class="flex justify-end">
+          <Button 
+            @click="handleWithdrawClick" 
+            variant="outline"
+            class="bg-red-900/20 border-red-700 text-red-400 hover:bg-red-900/40"
+          >
+            회원 탈퇴
+          </Button>
+        </div>
+      </div>
     </div>
+
+    <!-- Withdrawal Dialog -->
+    <Teleport to="body">
+      <div 
+        v-if="showWithdrawalDialog"
+        class="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
+        @click="handleDialogBackdropClick"
+      >
+      <div 
+        class="bg-zinc-900 border border-zinc-800 rounded-xl p-8 max-w-md w-full mx-4 space-y-6"
+        @click.stop
+      >
+        <template v-if="withdrawalStep === 'password'">
+          <div class="space-y-2">
+            <h3 class="text-2xl text-white">회원 탈퇴</h3>
+            <p class="text-zinc-400">
+              회원 탈퇴를 진행하려면 비밀번호를 입력해주세요.
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <Label class="text-zinc-300">비밀번호</Label>
+            <Input
+              type="password"
+              v-model="withdrawalPassword"
+              placeholder="비밀번호를 입력하세요"
+              class="h-12 bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-600"
+              @keyup.enter="goToWithdrawalFinalConfirm"
+            />
+          </div>
+
+          <div class="flex gap-3 justify-end">
+            <Button 
+              type="button"
+              @click="handleWithdrawalCancel"
+              variant="outline"
+              class="bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+            >
+              취소
+            </Button>
+            <Button 
+              type="button"
+              @click="goToWithdrawalFinalConfirm"
+              class="bg-red-600 hover:bg-red-700 text-white"
+            >
+              다음
+            </Button>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="space-y-2">
+            <h3 class="text-2xl text-white">정말 탈퇴할까요?</h3>
+            <p class="text-zinc-400">
+              이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다.
+            </p>
+          </div>
+
+          <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 space-y-2">
+            <p class="text-zinc-300 text-sm">삭제되는 항목</p>
+            <ul class="text-zinc-400 text-sm space-y-1 ml-4 list-disc">
+              <li>프로필 정보 및 건강 데이터</li>
+              <li>식단 및 운동 기록</li>
+              <li>챌린지 참여 내역 및 뱃지</li>
+              <li>커뮤니티 게시글 및 댓글</li>
+            </ul>
+          </div>
+
+          <div class="flex gap-3 justify-end">
+            <Button
+              type="button"
+              @click="() => (withdrawalStep = 'password')"
+              variant="outline"
+              class="bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+              :disabled="isWithdrawing"
+            >
+              뒤로
+            </Button>
+            <Button
+              type="button"
+              @click="handleWithdrawalConfirm"
+              class="bg-red-600 hover:bg-red-700 text-white"
+              :disabled="isWithdrawing"
+            >
+              <span v-if="isWithdrawing">처리 중...</span>
+              <span v-else>탈퇴 확정</span>
+            </Button>
+          </div>
+        </template>
+      </div>
+    </div>
+    </Teleport>
   </div>
 </template>

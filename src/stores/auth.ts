@@ -133,12 +133,50 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
+    async function withdraw(password: string): Promise<boolean> {
+        try {
+            if (!refreshToken.value) {
+                throw new Error('인증 정보가 없습니다.');
+            }
+
+            await api.post('/auth/withdraw', {
+                password,
+                refreshToken: refreshToken.value
+            });
+
+            // Clear all auth data
+            token.value = '';
+            refreshToken.value = '';
+            user.value = null;
+            localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('user');
+
+            return true;
+        } catch (error: any) {
+            console.error('Withdrawal failed:', error);
+
+            let message = '회원 탈퇴에 실패했습니다.';
+            if (axios.isAxiosError(error) && error.response) {
+                const data = error.response.data as ErrorResponse;
+                if (data.message) {
+                    message = data.message;
+                } else if (data.error) {
+                    message = data.error;
+                }
+            }
+
+            throw new Error(message);
+        }
+    }
+
     return {
         user,
         token,
         isAuthenticated,
         login,
         logout,
-        refreshAccessToken
+        refreshAccessToken,
+        withdraw
     };
 });
