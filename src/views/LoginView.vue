@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import api from "@/api/auth";
@@ -19,6 +19,99 @@ const confirmPassword = ref("");
 const name = ref("");
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
+const flashMessage = ref<{ type: "error" | "success"; message: string } | null>(null);
+
+onMounted(() => {
+  try {
+    const raw = sessionStorage.getItem("flash_message");
+    if (!raw) return;
+    sessionStorage.removeItem("flash_message");
+    const parsed = JSON.parse(raw) as { type?: unknown; message?: unknown };
+    if (typeof parsed?.message === "string") {
+      flashMessage.value = {
+        type: parsed.type === "success" ? "success" : "error",
+        message: parsed.message,
+      };
+    }
+  } catch {
+    // ignore
+  }
+});
+
+// Email Check State
+const isEmailChecked = ref(false);
+const isEmailAvailable = ref(false);
+const emailCheckMessage = ref("");
+
+// Nickname Check State
+const isNicknameChecked = ref(false);
+const isNicknameAvailable = ref(false);
+const nicknameCheckMessage = ref("");
+
+const checkNickname = async () => {
+  if (!name.value) {
+    alert("닉네임을 입력해주세요.");
+    return;
+  }
+
+  try {
+    const response = await api.isUsernameAvailable(name.value);
+    isNicknameAvailable.value = response.data.available;
+    isNicknameChecked.value = true;
+
+    if (isNicknameAvailable.value) {
+      nicknameCheckMessage.value = "사용 가능한 닉네임입니다.";
+    } else {
+      nicknameCheckMessage.value = "이미 사용 중인 닉네임입니다.";
+    }
+  } catch (error: any) {
+    console.error(error);
+    alert("닉네임 중복 확인 중 오류가 발생했습니다.");
+  }
+};
+
+// Reset check when nickname changes
+const handleNicknameChange = () => {
+  isNicknameChecked.value = false;
+  isNicknameAvailable.value = false;
+  nicknameCheckMessage.value = "";
+};
+
+const checkEmail = async () => {
+  if (!email.value) {
+    alert("이메일을 입력해주세요.");
+    return;
+  }
+  
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
+    alert("올바른 이메일 형식이 아닙니다.");
+    return;
+  }
+
+  try {
+    const response = await api.isEmailAvailable(email.value);
+    // Adjust based on actual API response structure. 
+    // Assuming response.data.available is boolean.
+    isEmailAvailable.value = response.data.available;
+    isEmailChecked.value = true;
+
+    if (isEmailAvailable.value) {
+      emailCheckMessage.value = "사용 가능한 이메일입니다.";
+    } else {
+      emailCheckMessage.value = "이미 사용 중인 이메일입니다.";
+    }
+  } catch (error: any) {
+    console.error(error);
+    alert("이메일 중복 확인 중 오류가 발생했습니다.");
+  }
+};
+
+// Reset check when email changes
+const handleEmailChange = () => {
+  isEmailChecked.value = false;
+  isEmailAvailable.value = false;
+  emailCheckMessage.value = "";
+};
 
 const handleSubmit = async () => {
   try {
@@ -26,10 +119,22 @@ const handleSubmit = async () => {
       await authStore.login({ email: email.value, password: password.value });
       router.push("/dashboard");
     } else {
+      // Validate Signup
+      if (!isEmailChecked.value || !isEmailAvailable.value) {
+        alert("이메일 중복 확인을 해주세요.");
+        return;
+      }
+
+      if (!isNicknameChecked.value || !isNicknameAvailable.value) {
+        alert("닉네임 중복 확인을 해주세요.");
+        return;
+      }
+
       if (password.value !== confirmPassword.value) {
         alert("비밀번호가 일치하지 않습니다.");
         return;
       }
+      
       await api.signUp({ 
         email: email.value, 
         password: password.value, 
@@ -126,28 +231,78 @@ const handleSubmit = async () => {
           <p class="text-zinc-400">{{ isLogin ? "계정에 로그인하세요" : "새로운 계정을 만드세요" }}</p>
         </div>
 
+        <!-- Flash Message (ex: session expired) -->
+        <div
+          v-if="flashMessage"
+          class="rounded-lg border px-4 py-3 text-sm"
+          :class="
+            flashMessage.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-500/10 border-red-500/30 text-red-300'
+          "
+        >
+          {{ flashMessage.message }}
+        </div>
+
         <!-- Form -->
         <form @submit.prevent="handleSubmit" class="space-y-5">
           <div v-if="!isLogin" class="space-y-2">
-            <Label class="text-zinc-300"> 이름 </Label>
-            <Input
-              type="text"
-              placeholder="홍길동"
-              v-model="name"
-              class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700"
-              :required="!isLogin"
-            />
+            <Label class="text-zinc-300"> 닉네임 </Label>
+            <div class="flex gap-2">
+              <Input
+                type="text"
+                placeholder="홍길동"
+                v-model="name"
+                @input="handleNicknameChange"
+                class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700 flex-1"
+                :required="!isLogin"
+              />
+              <Button 
+                type="button" 
+                @click="checkNickname"
+                variant="outline"
+                class="h-12 whitespace-nowrap bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+              >
+                중복 확인
+              </Button>
+            </div>
+            <!-- Validation Message -->
+             <p v-if="nicknameCheckMessage" 
+               class="text-sm"
+               :class="isNicknameAvailable ? 'text-emerald-500' : 'text-red-500'"
+            >
+              {{ nicknameCheckMessage }}
+            </p>
           </div>
 
           <div class="space-y-2">
             <Label class="text-zinc-300"> 이메일 </Label>
-            <Input
-              type="email"
-              placeholder="your@email.com"
-              v-model="email"
-              class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700"
-              required
-            />
+            <div class="flex gap-2">
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                v-model="email"
+                @input="handleEmailChange"
+                class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700 flex-1"
+                required
+              />
+              <Button 
+                v-if="!isLogin"
+                type="button" 
+                @click="checkEmail"
+                variant="outline"
+                class="h-12 whitespace-nowrap bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
+              >
+                중복 확인
+              </Button>
+            </div>
+            <!-- Validation Message -->
+            <p v-if="!isLogin && emailCheckMessage" 
+               class="text-sm"
+               :class="isEmailAvailable ? 'text-emerald-500' : 'text-red-500'"
+            >
+              {{ emailCheckMessage }}
+            </p>
           </div>
 
           <div class="space-y-2">
