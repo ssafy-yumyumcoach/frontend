@@ -140,7 +140,11 @@ const handleSubmit = async () => {
         password: password.value, 
         username: name.value 
       });
-      alert("회원가입이 완료되었습니다.");
+
+      // 회원가입 후 자동 로그인
+      await authStore.login({ email: email.value, password: password.value });
+
+      alert("회원가입이 완료되었습니다.\n초기 설정을 위해 온보딩 페이지로 이동합니다.");
       // 회원가입 성공 시 온보딩 페이지로 이동
       router.push("/onboarding");
       isLogin.value = true;

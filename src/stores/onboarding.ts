@@ -5,15 +5,16 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   // State
   const gender = ref<"male" | "female">("male");
   const age = ref<number>(25);
-  const height = ref<number>(170);
-  const weight = ref<number>(65);
-  const targetWeight = ref<number>(60);
-  const activityLevel = ref<string>("moderate");
+  const height = ref<number | null>(null);
+  const weight = ref<number | null>(null);
+  const targetWeight = ref<number | null>(null);
+  const activityLevel = ref<string>("MODERATE");
   const goals = ref<string[]>([]);
   const diseases = ref<string[]>([]);
 
   // Getters (Computed)
   const bmi = computed(() => {
+    if (!height.value || !weight.value) return '0.0';
     const h = height.value / 100;
     return (weight.value / (h * h)).toFixed(1);
   });
@@ -27,15 +28,15 @@ export const useOnboardingStore = defineStore("onboarding", () => {
     age.value = val;
   }
 
-  function setHeight(val: number) {
+  function setHeight(val: number | null) {
     height.value = val;
   }
 
-  function setWeight(val: number) {
+  function setWeight(val: number | null) {
     weight.value = val;
   }
 
-  function setTargetWeight(val: number) {
+  function setTargetWeight(val: number | null) {
     targetWeight.value = val;
   }
 
@@ -64,10 +65,10 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   function reset() {
     gender.value = "male";
     age.value = 25;
-    height.value = 170;
-    weight.value = 65;
-    targetWeight.value = 60;
-    activityLevel.value = "moderate";
+    height.value = null;
+    weight.value = null;
+    targetWeight.value = null;
+    activityLevel.value = "MODERATE";
     goals.value = [];
     diseases.value = [];
   }

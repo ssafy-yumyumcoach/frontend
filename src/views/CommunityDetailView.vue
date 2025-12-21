@@ -15,6 +15,10 @@ const route = useRoute();
 const router = useRouter();
 const postId = Number(route.params.id);
 
+const goToProfile = (userId: number) => {
+    router.push({ name: 'user-profile', params: { id: userId } });
+};
+
 // State
 const post = ref<PostDetailResponse | null>(null);
 const comments = ref<CommentResponse[]>([]);
@@ -377,8 +381,10 @@ const formatTime = (dateStr: string) => {
             <!-- Header -->
             <div class="flex items-center justify-between mb-6">
                 <div class="flex items-center gap-3">
-                    <Avatar :src="post.authorProfileImageUrl" :fallback="post.authorUsername?.[0]" class="w-10 h-10" />
-                    <div>
+                    <div @click="goToProfile(post.authorId)" class="cursor-pointer hover:opacity-80 transition-opacity">
+                        <Avatar :src="post.authorProfileImageUrl" :fallback="post.authorUsername?.[0]" class="w-10 h-10" />
+                    </div>
+                    <div @click="goToProfile(post.authorId)" class="cursor-pointer hover:underline">
                         <div class="text-white font-medium">{{ post.authorUsername }}</div>
                         <div class="text-xs text-zinc-400">{{ formatTime(post.createdAt) }}</div>
                     </div>
@@ -469,10 +475,12 @@ const formatTime = (dateStr: string) => {
                 작성된 댓글이 없습니다.
              </div>
              <div v-for="comment in comments" :key="comment.commentId" class="flex gap-3">
-               <Avatar :src="comment.authorProfileImageUrl" :fallback="comment.authorUsername?.[0] || '?'" class="w-8 h-8" />
+               <div @click="goToProfile(comment.authorId)" class="cursor-pointer hover:opacity-80 transition-opacity h-fit">
+                   <Avatar :src="comment.authorProfileImageUrl" :fallback="comment.authorUsername?.[0] || '?'" class="w-8 h-8" />
+               </div>
                <div class="flex-1 bg-zinc-800/50 rounded-lg p-3">
                  <div class="flex items-center justify-between mb-1">
-                   <span class="text-sm font-medium text-white">{{ comment.authorUsername }}</span>
+                   <span @click="goToProfile(comment.authorId)" class="text-sm font-medium text-white cursor-pointer hover:underline">{{ comment.authorUsername }}</span>
                    <div class="flex items-center gap-1">
                        <span class="text-xs text-zinc-500 mr-2">{{ formatTime(comment.createdAt) }}</span>
                        <button 
