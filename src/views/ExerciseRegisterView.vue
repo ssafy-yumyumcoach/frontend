@@ -1,30 +1,44 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { useRouter } from "vue-router";
-import { Search, Plus, X } from "lucide-vue-next";
+import { ref, computed, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { Search, Plus, X, Calendar, Clock } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Select from "@/components/ui/Select.vue";
+import exerciseApi, { type Exercise } from "@/api/exercise";
 
 const router = useRouter();
+const dateInputRef = ref<HTMLInputElement | null>(null);
+const timeInputRef = ref<HTMLInputElement | null>(null);
+
+const openDatePicker = () => {
+  // try/catch for compatibility if showPicker is missing (though largely supported)
+  try {
+    dateInputRef.value?.showPicker();
+  } catch (e) {
+    dateInputRef.value?.click();
+  }
+};
+
+const openTimePicker = () => {
+  try {
+    timeInputRef.value?.showPicker();
+  } catch (e) {
+    timeInputRef.value?.click();
+  }
+};
 
 // Types
-interface Exercise {
-  id: string;
-  name: string;
-  category: string;
-  met: number;
-  icon: string;
-}
-
 interface SelectedExercise {
-  id: string;
-  exerciseId: string;
+  id: string; // Internal unique ID for the UI list
+  recordId?: number; // Backend ID for existing records
+  exerciseId: number; // API ID (Dynamic based on intensity)
   name: string;
   category: string;
-  duration: number; // 분
-  intensity: string; // 낮음, 보통, 높음
+  duration: number; // Minutes
+  intensity: string; // "낮음", "중간", "높음" etc.
   calories: number;
+  met: number;
 }
 
 // State
@@ -32,52 +46,111 @@ const selectedDate = ref(new Date().toISOString().split("T")[0]);
 const selectedTime = ref("18:00");
 const searchQuery = ref("");
 const selectedCategory = ref("전체");
-const selectedExercises = ref<SelectedExercise[]>([
-  {
-    id: "1",
-    exerciseId: "squat",
-    name: "스쿼트",
-    category: "하체 · 근력",
-    duration: 30,
-    intensity: "보통",
-    calories: 180,
-  },
-  {
-    id: "2",
-    exerciseId: "plank",
-    name: "플랭크",
-    category: "코어",
-    duration: 15,
-    intensity: "보통",
-    calories: 140,
-  },
-]);
+const exercises = ref<Exercise[]>([]);
+const selectedExercises = ref<SelectedExercise[]>([]);
+const isLoading = ref(false);
+const route = useRoute();
+const isEditMode = ref(false);
+const originalRecordIds = ref<number[]>([]);
 
 // Data
-const categories = ["전체", "유산소", "근력", "코어", "스트레칭"];
+const categories = ["전체", "맨몸 운동", "웨이트", "유산소", "스트레칭", "스포츠"];
 
-const exercises: Exercise[] = [
-  { id: "squat", name: "스쿼트", category: "근력", met: 5.0, icon: "🏋️" },
-  { id: "pushup", name: "푸시업", category: "근력", met: 3.8, icon: "💪" },
-  { id: "plank", name: "플랭크", category: "코어", met: 4.0, icon: "🧘" },
-  { id: "running", name: "러닝", category: "유산소", met: 7.0, icon: "🏃" },
-  { id: "walking", name: "걷기", category: "유산소", met: 3.5, icon: "🚶" },
-  { id: "yoga", name: "요가", category: "스트레칭", met: 2.5, icon: "🧘‍♀️" },
-  { id: "cycling", name: "사이클링", category: "유산소", met: 6.0, icon: "🚴" },
-  { id: "deadlift", name: "데드리프트", category: "근력", met: 6.0, icon: "🏋️‍♂️" },
-];
+// Utilities
+const calculateCalories = (met: number, duration: number) => {
+  return Math.floor((met * 3.5 * 70 * duration) / 200);
+};
 
-const intensityOptions = [
-  { label: "낮음", value: "낮음" },
-  { label: "보통", value: "보통" },
-  { label: "높음", value: "높음" },
-];
+// Lifecycle
+onMounted(async () => {
+  await fetchExercises();
+  checkEditMode();
+});
+
+const checkEditMode = async () => {
+  const mode = route.query.mode as string;
+  const idsStr = route.query.ids as string;
+
+  if (mode === "edit" && idsStr) {
+    isEditMode.value = true;
+    const ids = idsStr.split(",").map(Number);
+    await loadEditData(ids);
+  }
+};
+
+const loadEditData = async (ids: number[]) => {
+  isLoading.value = true;
+  try {
+    const promises = ids.map((id) => exerciseApi.getMyExerciseRecordDetail(id));
+    const responses = await Promise.all(promises);
+
+    // Store original IDs for delete tracking
+    originalRecordIds.value = ids;
+
+    // Set Date/time from the first record (assuming grouped records share time)
+    if (responses.length > 0) {
+      const firstRecord = responses[0].data;
+      if (firstRecord.recordedAt) {
+        const parts = firstRecord.recordedAt.split("T");
+        selectedDate.value = parts[0];
+        selectedTime.value = parts[1].substring(0, 5); // HH:MM
+      }
+    }
+
+    selectedExercises.value = responses.map((res) => {
+      const data = res.data;
+      return {
+        id: Date.now().toString() + Math.random(), // Unique UI ID
+        recordId: data.recordId,
+        exerciseId: data.exerciseId,
+        name: data.exerciseName,
+        category: data.type,
+        duration: data.durationMinutes,
+        intensity: data.intensityLevel,
+        calories: data.calories,
+        met: data.met,
+      };
+    });
+  } catch (e) {
+    console.error("Failed to load edit data", e);
+    alert("운동 기록을 불러오는데 실패했습니다.");
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const fetchExercises = async () => {
+  isLoading.value = true;
+  try {
+    const response = await exerciseApi.getExercises();
+    exercises.value = response.data;
+  } catch (error) {
+    console.error("Failed to fetch exercises:", error);
+  } finally {
+    isLoading.value = false;
+  }
+};
 
 // Computed
+const groupedExercises = computed(() => {
+  const groups: Record<string, Exercise[]> = {};
+  exercises.value.forEach((ex) => {
+    if (!groups[ex.name]) {
+      groups[ex.name] = [];
+    }
+    groups[ex.name].push(ex);
+  });
+  return groups;
+});
+
+const uniqueExercises = computed(() => {
+  return Object.values(groupedExercises.value).map((group) => group[0]);
+});
+
 const filteredExercises = computed(() => {
-  return exercises.filter((exercise) => {
+  return uniqueExercises.value.filter((exercise) => {
     const matchesSearch = exercise.name.toLowerCase().includes(searchQuery.value.toLowerCase());
-    const matchesCategory = selectedCategory.value === "전체" || exercise.category === selectedCategory.value;
+    const matchesCategory = selectedCategory.value === "전체" || exercise.type === selectedCategory.value;
     return matchesSearch && matchesCategory;
   });
 });
@@ -92,14 +165,19 @@ const totalCalories = computed(() => {
 
 // Actions
 const handleAddExercise = (exercise: Exercise) => {
+  // Default to "중간" intensity if available, otherwise take the first available one
+  const variants = groupedExercises.value[exercise.name] || [exercise];
+  const defaultVariant = variants.find((v) => v.intensityLevel === "중간") || variants[0];
+
   const newExercise: SelectedExercise = {
     id: Date.now().toString(),
-    exerciseId: exercise.id,
-    name: exercise.name,
-    category: exercise.category,
+    exerciseId: defaultVariant.exerciseId,
+    name: defaultVariant.name,
+    category: defaultVariant.type,
     duration: 30,
-    intensity: "보통",
-    calories: 150, // 임시 계산
+    intensity: defaultVariant.intensityLevel,
+    calories: calculateCalories(defaultVariant.met, 30),
+    met: defaultVariant.met,
   };
   selectedExercises.value.push(newExercise);
 };
@@ -109,40 +187,133 @@ const handleRemoveExercise = (id: string) => {
 };
 
 const handleUpdateExercise = (id: string, field: keyof SelectedExercise, value: number | string) => {
-  const exercise = selectedExercises.value.find((ex) => ex.id === id);
-  if (exercise) {
-    if (field === "duration") exercise.duration = Number(value);
-    if (field === "intensity") exercise.intensity = String(value);
-    // Recalculate calories based on duration/intensity/MET (simplified logic)
-    exercise.calories = Math.floor(
-      exercise.duration * 5 * (exercise.intensity === "높음" ? 1.2 : exercise.intensity === "낮음" ? 0.8 : 1.0)
-    );
+  const selectedEx = selectedExercises.value.find((ex) => ex.id === id);
+  if (!selectedEx) return;
+
+  if (field === "duration") {
+    selectedEx.duration = Number(value);
+    // Recalculate calories using current MET
+    selectedEx.calories = calculateCalories(selectedEx.met, selectedEx.duration);
+  } else if (field === "intensity") {
+    const newIntensity = String(value);
+
+    // Find the variant with the new intensity
+    const variants = groupedExercises.value[selectedEx.name];
+    const newVariant = variants?.find((v) => v.intensityLevel === newIntensity);
+
+    if (newVariant) {
+      selectedEx.intensity = newIntensity;
+      selectedEx.exerciseId = newVariant.exerciseId;
+      selectedEx.met = newVariant.met;
+      selectedEx.calories = calculateCalories(newVariant.met, selectedEx.duration);
+    } else {
+      // Fallback
+      console.warn(`Variant with intensity ${newIntensity} not found for ${selectedEx.name}`);
+    }
   }
 };
 
-const handleSave = () => {
-  console.log("Saving exercise:", {
-    date: selectedDate.value,
-    time: selectedTime.value,
-    exercises: selectedExercises.value,
+const getIntensityOptions = (name: string) => {
+  const variants = groupedExercises.value[name] || [];
+  // Return unique intensity levels
+  const levels = Array.from(new Set(variants.map((v) => v.intensityLevel)));
+
+  // Sort logically if possible (Lowest -> Highest)
+  const order = ["낮음", "중간", "높음"];
+  levels.sort((a, b) => {
+    const idxA = order.indexOf(a);
+    const idxB = order.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    return 0;
   });
-  router.push("/dashboard");
+
+  return levels.map((l) => ({ label: l, value: l }));
+};
+
+const handleSave = async () => {
+  if (selectedExercises.value.length === 0) {
+    alert("운동을 최소 하나 이상 선택해주세요.");
+    return;
+  }
+
+  try {
+    const dateTime = `${selectedDate.value}T${selectedTime.value}:00`;
+
+    // 1. Create New Records (no recordId)
+    const newRecords = selectedExercises.value
+      .filter((ex) => !ex.recordId)
+      .map((ex) => ({
+        exerciseId: ex.exerciseId,
+        durationMinutes: ex.duration,
+        recordedAt: dateTime,
+      }));
+
+    // 2. Update Existing Records (has recordId)
+    const updatePromises = selectedExercises.value
+      .filter((ex) => ex.recordId)
+      .map((ex) =>
+        exerciseApi.updateMyExerciseRecord(ex.recordId!, {
+          exerciseId: ex.exerciseId,
+          durationMinutes: ex.duration,
+          recordedAt: dateTime,
+        })
+      );
+
+    // 3. Delete Removed Records
+    // IDs that were in originalRecordIds but NOT in current selectedExercises
+    const currentRecordIds = selectedExercises.value.map((ex) => ex.recordId).filter((id): id is number => !!id);
+
+    const initialIds = originalRecordIds.value;
+    const idsToDelete = initialIds.filter((id) => !currentRecordIds.includes(id));
+
+    const deletePromises = idsToDelete.map((id) => exerciseApi.deleteMyExerciseRecord(id));
+
+    // Execute All
+    const createPromise = newRecords.length > 0 ? exerciseApi.createMyExerciseRecords(newRecords) : Promise.resolve();
+
+    await Promise.all([createPromise, ...updatePromises, ...deletePromises]);
+
+    alert(isEditMode.value ? "운동 기록이 수정되었습니다." : "운동 기록이 저장되었습니다.");
+    router.push("/dashboard");
+  } catch (error) {
+    console.error("Failed to save exercise records:", error);
+    alert("운동 기록 저장에 실패했습니다.");
+  }
 };
 </script>
 
 <template>
   <div class="space-y-6">
     <!-- 상단 - 타이틀 + 메타 정보 -->
-    <!-- 상단 - 메타 정보 -->
     <div class="flex flex-col lg:flex-row lg:items-center justify-end gap-4">
       <div class="flex flex-wrap items-center gap-2">
         <!-- 날짜 선택 -->
-        <div class="relative">
-          <Input type="date" v-model="selectedDate" class="w-[150px] bg-zinc-900 border-zinc-800 text-white text-sm" />
+        <div class="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 w-[150px]">
+          <span class="text-white text-sm flex-1">{{ selectedDate }}</span>
+          <button @click="openDatePicker" class="text-white hover:text-emerald-400 transition-colors">
+            <Calendar class="w-4 h-4" />
+          </button>
+          <input
+            ref="dateInputRef"
+            type="date"
+            v-model="selectedDate"
+            class="absolute inset-0 opacity-0 pointer-events-none"
+          />
         </div>
 
         <!-- 시간 선택 -->
-        <Input type="time" v-model="selectedTime" class="w-[110px] bg-zinc-900 border-zinc-800 text-white text-sm" />
+        <div class="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 w-[120px]">
+          <span class="text-white text-sm flex-1">{{ selectedTime }}</span>
+          <button @click="openTimePicker" class="text-white hover:text-emerald-400 transition-colors">
+            <Clock class="w-4 h-4" />
+          </button>
+          <input
+            ref="timeInputRef"
+            type="time"
+            v-model="selectedTime"
+            class="absolute inset-0 opacity-0 pointer-events-none"
+          />
+        </div>
       </div>
     </div>
 
@@ -180,30 +351,25 @@ const handleSave = () => {
           </div>
 
           <!-- 운동 리스트 -->
-          <div class="space-y-3 max-h-[500px] overflow-y-auto">
-            <div v-if="filteredExercises.length > 0" class="space-y-3">
+          <div class="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar">
+            <div v-if="isLoading" class="text-center py-10 text-zinc-500">로딩 중...</div>
+            <div v-else-if="filteredExercises.length > 0" class="space-y-2">
               <div
                 v-for="exercise in filteredExercises"
-                :key="exercise.id"
-                class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-4"
+                :key="exercise.name"
+                class="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 hover:border-zinc-500 transition-colors"
+                @click="handleAddExercise(exercise)"
               >
-                <div class="flex items-center justify-between gap-3">
-                  <div class="flex items-center gap-3 flex-1">
-                    <span class="text-2xl">{{ exercise.icon }}</span>
-                    <div>
-                      <div class="text-white">
-                        {{ exercise.name }} <span class="text-zinc-400 text-sm">({{ exercise.category }})</span>
-                      </div>
-                      <div class="text-sm text-zinc-400">기본 MET: {{ exercise.met }}</div>
-                    </div>
+                <div class="flex items-center justify-between gap-3 cursor-pointer">
+                  <!-- Single Line Layout -->
+                  <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <span class="text-white font-medium truncate">{{ exercise.name }}</span>
+                    <span class="text-zinc-500 text-xs whitespace-nowrap px-2 py-0.5 bg-zinc-800 rounded">{{
+                      exercise.type
+                    }}</span>
                   </div>
-                  <Button
-                    size="sm"
-                    @click="handleAddExercise(exercise)"
-                    class="bg-emerald-500 hover:bg-emerald-600 text-white"
-                  >
-                    추가하기
-                  </Button>
+
+                  <Plus class="w-4 h-4 text-zinc-500 hover:text-white" />
                 </div>
               </div>
             </div>
@@ -221,14 +387,11 @@ const handleSave = () => {
           <h3 class="text-lg text-white pb-2 border-b border-zinc-800">오늘 기록할 운동</h3>
 
           <div v-if="selectedExercises.length === 0" class="text-center py-16 space-y-3">
-            <div class="text-5xl">💪</div>
+            <div class="text-4xl grayscale opacity-50">📝</div>
             <p class="text-zinc-400">오늘 등록할 운동이 아직 없어요.</p>
-            <p class="text-zinc-500 text-sm">
-              왼쪽에서 운동을 검색하거나<br />
-              카테고리에서 골라 추가해보세요.
-            </p>
+            <p class="text-zinc-500 text-sm">왼쪽에서 운동을 선택해서 추가해주세요.</p>
           </div>
-          <div v-else class="space-y-3 max-h-[500px] overflow-y-auto">
+          <div v-else class="space-y-3 max-h-[500px] overflow-y-auto custom-scrollbar">
             <div
               v-for="exercise in selectedExercises"
               :key="exercise.id"
@@ -249,7 +412,7 @@ const handleSave = () => {
 
               <!-- 시간과 강도 한 줄 배치 -->
               <div class="grid grid-cols-2 gap-3">
-                <!-- 시간(분) - 직접 입력 -->
+                <!-- 시간(분) -->
                 <div class="space-y-1">
                   <label class="text-xs text-zinc-400">시간(분)</label>
                   <Input
@@ -257,7 +420,7 @@ const handleSave = () => {
                     v-model="exercise.duration"
                     @input="(e: Event) => handleUpdateExercise(exercise.id, 'duration', (e.target as HTMLInputElement).value)"
                     class="h-9 bg-zinc-900 border-zinc-700 text-white"
-                    min="0"
+                    min="1"
                   />
                 </div>
 
@@ -267,26 +430,22 @@ const handleSave = () => {
                   <Select
                     :model-value="exercise.intensity"
                     @update:model-value="(val) => handleUpdateExercise(exercise.id, 'intensity', val)"
-                    :options="intensityOptions"
+                    :options="getIntensityOptions(exercise.name)"
                     class="h-9 text-xs bg-zinc-900 border-zinc-700 text-white"
                   />
                 </div>
               </div>
 
-              <!-- 예상 소모 칼로리 -->
-              <div class="pt-2 border-t border-zinc-700">
-                <div class="text-sm text-emerald-400">예상 소모 칼로리: {{ exercise.calories }} kcal</div>
-                <div class="text-xs text-zinc-500 mt-0.5">※ 소모 칼로리는 평균값으로 실제와 다를 수 있어요.</div>
+              <!-- 예상 소모 칼로리 & MET -->
+              <div
+                class="pt-2 border-t border-zinc-700 flex justify-between items-center bg-zinc-800/50 px-3 py-2 rounded"
+              >
+                <div class="text-sm text-zinc-400">
+                  MET <span class="text-white font-medium">{{ exercise.met }}</span>
+                </div>
+                <div class="text-sm text-emerald-400 font-bold">예상 {{ exercise.calories }} kcal</div>
               </div>
             </div>
-
-            <!-- 운동 더 추가하기 (기능 없음, UI만) -->
-            <button
-              class="w-full py-4 border-2 border-dashed border-zinc-700 rounded-lg text-emerald-400 hover:border-emerald-500 hover:bg-emerald-500/5 transition-all flex items-center justify-center gap-2"
-            >
-              <Plus class="w-5 h-5" />
-              <span>운동 더 추가하기</span>
-            </button>
           </div>
         </div>
       </div>
@@ -314,10 +473,26 @@ const handleSave = () => {
             취소
           </Button>
           <Button @click="handleSave" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8">
-            이대로 운동 기록 저장하기
+            기록 저장하기
           </Button>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+</style>
