@@ -31,4 +31,12 @@ export default {
    * Authorization: Bearer {accessToken} (axios interceptor에서 자동 첨부)
    */
   getFoods: (params?: FoodListParams) => api.get<FoodListResponse>(`/foods`, { params }),
+
+  /**
+   * 음식 상세 조회
+   * GET /api/foods/{foodId}
+   *
+   * Authorization: Bearer {accessToken} (axios interceptor에서 자동 첨부)
+   */
+  getFoodDetail: (foodId: number) => api.get<Food>(`/foods/${foodId}`),
 };
