@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { Upload, Trash2, X } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
@@ -8,8 +8,10 @@ import Checkbox from "@/components/ui/Checkbox.vue";
 import Select from "@/components/ui/Select.vue";
 import ToggleGroup from "@/components/ui/ToggleGroup.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
+import { useFoodsStore } from "@/stores/foods";
 
 const router = useRouter();
+const foodsStore = useFoodsStore();
 
 // Types
 interface FoodItem {
@@ -32,6 +34,10 @@ const selectedMealType = ref("lunch");
 const hasPhoto = ref(false);
 const uploadedPhotoUrl = ref("");
 const foods = ref<FoodItem[]>([]);
+
+// Foods Catalog (GET /api/foods)
+const catalogKeyword = ref("");
+const selectedCatalogFoodId = ref<string>("");
 
 // Options
 const mealTypeOptions = [
@@ -68,7 +74,27 @@ const totalNutrition = computed(() => {
     );
 });
 
+const catalogFoodOptions = computed(() => {
+  return foodsStore.foods.map((f) => ({
+    label: `${f.name} · ${f.calories}kcal`,
+    value: String(f.id),
+  }));
+});
+
 // Actions
+const fetchCatalogFoods = async () => {
+  await foodsStore.fetchFoods({
+    keyword: catalogKeyword.value.trim() || undefined,
+  });
+};
+
+onMounted(() => {
+  // 최초 진입 시 전체 음식 목록 로드
+  fetchCatalogFoods().catch(() => {
+    // errorMessage는 store에 저장되므로 여기서는 무시
+  });
+});
+
 const handlePhotoUpload = () => {
   hasPhoto.value = true;
   uploadedPhotoUrl.value = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c";
@@ -146,6 +172,27 @@ const handleAddManualFood = () => {
     fat: 0,
     manualInput: true,
   });
+};
+
+const handleAddCatalogFood = () => {
+  if (!selectedCatalogFoodId.value) return;
+  const selected = foodsStore.foodById(Number(selectedCatalogFoodId.value));
+  if (!selected) return;
+
+  foods.value.push({
+    id: `catalog-${selected.id}-${Date.now()}`,
+    name: selected.name,
+    checked: true,
+    serving: "1인분",
+    servingAmount: 1,
+    calories: selected.calories,
+    carbs: selected.carbohydrate,
+    protein: selected.protein,
+    fat: selected.fat,
+    manualInput: false,
+  });
+
+  selectedCatalogFoodId.value = "";
 };
 
 const handleSave = () => {
@@ -227,12 +274,61 @@ const handleSave = () => {
           <!-- 헤더 -->
           <div class="space-y-3 pb-4 border-b border-zinc-800">
             <div class="flex items-center justify-between">
-              <h3 className="text-lg text-white">이번 식단에 들어간 음식</h3>
-              <span className="text-xs text-zinc-500"> 체크된 음식만 기록에 저장돼요. </span>
+              <h3 class="text-lg text-white">이번 식단에 들어간 음식</h3>
+              <span class="text-xs text-zinc-500"> 체크된 음식만 기록에 저장돼요. </span>
             </div>
-            <p className="text-sm text-zinc-400">
+            <p class="text-sm text-zinc-400">
               AI가 사진에서 인식한 음식에, 직접 추가/수정한 음식도 함께 기록할 수 있어요.
             </p>
+          </div>
+
+          <!-- 음식 DB에서 추가하기 (/api/foods) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2">
+              <Input
+                v-model="catalogKeyword"
+                placeholder="음식 검색 (예: 닭가슴살)"
+                class="h-10 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
+                @keyup.enter="fetchCatalogFoods"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                class="h-10 bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700 whitespace-nowrap"
+                :disabled="foodsStore.isLoading"
+                @click="fetchCatalogFoods"
+              >
+                검색
+              </Button>
+            </div>
+
+            <div v-if="foodsStore.errorMessage" class="text-sm text-red-400">
+              {{ foodsStore.errorMessage }}
+            </div>
+
+            <div class="flex items-center gap-2">
+              <Select
+                :model-value="selectedCatalogFoodId"
+                @update:model-value="(val) => (selectedCatalogFoodId = val)"
+                :options="catalogFoodOptions"
+                :disabled="foodsStore.isLoading || catalogFoodOptions.length === 0"
+                placeholder="음식을 선택하세요"
+                class="h-10 bg-zinc-900 border-zinc-800 text-white"
+              />
+              <Button
+                type="button"
+                class="h-10 bg-emerald-500 hover:bg-emerald-600 text-white whitespace-nowrap"
+                :disabled="foodsStore.isLoading || !selectedCatalogFoodId"
+                @click="handleAddCatalogFood"
+              >
+                추가
+              </Button>
+            </div>
+
+            <div v-if="foodsStore.isLoading" class="text-xs text-zinc-500">음식 목록 불러오는 중...</div>
+            <div v-else-if="catalogFoodOptions.length === 0" class="text-xs text-zinc-500">
+              음식 목록이 비어있어요.
+            </div>
           </div>
 
           <!-- 음식 리스트 -->
