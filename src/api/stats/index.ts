@@ -1,8 +1,11 @@
-import api from '@/api/axios';
+import api from "@/api/axios";
 
-const BASE_URL = '/stats';
+const BASE_URL = "/me/stats";
 
 export default {
-    getWeeklyStats: () => api.get(`${BASE_URL}/weekly`),
-    getMonthlyStats: () => api.get(`${BASE_URL}/monthly`),
+  /**
+   * 주간 통계 조회
+   * GET /api/me/stats/week?date=YYYY-MM-DD
+   */
+  getWeeklyStats: (date: string) => api.get(`${BASE_URL}/week`, { params: { date } }),
 };
