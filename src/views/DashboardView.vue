@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { Sparkles, Utensils, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock } from "lucide-vue-next";
+import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
+import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } from "@/api/exercise/index";
 
 const router = useRouter();
 
@@ -10,7 +11,7 @@ const navigateTo = (path: string) => {
   router.push(path);
 };
 
-// Dummy Data for Top Stats
+// --- Daily Stats (Mock for now, will implement later or keeping static as per plan) ---
 const dailyStats = {
   intakeCalories: 1350,
   macros: {
@@ -21,6 +22,126 @@ const dailyStats = {
   exerciseCalories: 320,
   exerciseTime: 45,
 };
+
+// --- Unified Timeline Integration ---
+interface UnifiedTimelineItem {
+  type: "MEAL" | "EXERCISE";
+  id: number | string;
+  recordIds?: number[];
+  time: string; // HH:MM
+  title: string;
+  desc: string;
+  subDesc: string;
+  calories?: number;
+  colorClass: string; // "emerald" | "blue" etc.
+  icon: any; // Icon component
+}
+
+const timelineItems = ref<UnifiedTimelineItem[]>([]);
+
+// --- Daily Exercise Records Integration ---
+interface DisplayExerciseRecord extends ExerciseRecordListItem {
+  calories?: number;
+  detail?: ExerciseRecordDetail;
+}
+
+const todayExercises = ref<DisplayExerciseRecord[]>([]);
+
+const getTodayDate = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const fetchTodayExercises = async () => {
+  try {
+    const today = getTodayDate();
+    const res = await exerciseApi.getMyExerciseRecords(today);
+
+    // Enhance details
+    const enhancedRecords = await Promise.all(
+      res.data.map(async (record): Promise<DisplayExerciseRecord> => {
+        if (record.recordId) {
+          try {
+            const detailRes = await exerciseApi.getMyExerciseRecordDetail(record.recordId);
+            return { ...record, calories: detailRes.data.calories, detail: detailRes.data };
+          } catch (e) {
+            return record;
+          }
+        }
+        return record;
+      })
+    );
+
+    todayExercises.value = enhancedRecords;
+
+    // Group by Time
+    const groupedRecords: Record<string, DisplayExerciseRecord[]> = {};
+
+    enhancedRecords.forEach((ex) => {
+      let timeStr = "00:00";
+      if (ex.detail?.recordedAt && ex.detail.recordedAt.includes("T")) {
+        const parts = ex.detail.recordedAt.split("T");
+        if (parts.length > 1) {
+          timeStr = parts[1].substring(0, 5); // HH:MM
+        }
+      }
+
+      if (!groupedRecords[timeStr]) {
+        groupedRecords[timeStr] = [];
+      }
+      groupedRecords[timeStr].push(ex);
+    });
+
+    // Convert Groups to TimelineItems
+    const exerciseTimelineItems: UnifiedTimelineItem[] = Object.keys(groupedRecords).map((timeStr) => {
+      const group = groupedRecords[timeStr];
+      const firstItem = group[0];
+
+      // Calculate totals
+      const totalGroupCalories = group.reduce((sum, r) => sum + (r.calories || 0), 0);
+
+      // Create Description (e.g. "런닝 30분, 스쿼트 20분")
+      const desc = group.map((r) => `${r.exerciseName} ${r.durationMinutes}분`).join(", ");
+
+      const recordIds = group.map((r) => r.recordId).filter((id): id is number => !!id);
+
+      return {
+        type: "EXERCISE",
+        id: firstItem.recordId || `group-${timeStr}`, // Note: Using first ID for now. For delete/edit group, we might need all IDs.
+        recordIds: recordIds,
+        time: timeStr,
+        title: "운동",
+        desc: desc,
+        subDesc: `${totalGroupCalories} kcal 소모`, // User requested "320 kcal 소모" format
+        colorClass: "blue",
+        icon: Dumbbell,
+      };
+    });
+
+    // Merge and Sort
+    timelineItems.value = [...exerciseTimelineItems].sort((a, b) => {
+      // Removed dummyMeals
+      return a.time.localeCompare(b.time);
+    });
+
+    // Update stats
+    const totalCalories = enhancedRecords.reduce((sum, r) => sum + (r.calories || 0), 0);
+    const totalTime = enhancedRecords.reduce((sum, r) => sum + r.durationMinutes, 0);
+
+    dailyStats.exerciseCalories = Math.round(totalCalories);
+    dailyStats.exerciseTime = Math.round(totalTime);
+  } catch (e) {
+    console.error("Failed to fetch exercise records", e);
+    timelineItems.value = [];
+  }
+};
+
+onMounted(() => {
+  fetchTodayExercises();
+});
 
 // Dummy Data for Challenges (Only Active)
 const activeChallenges = ref([
@@ -72,6 +193,20 @@ const nextChallenge = () => {
     currentChallengeIndex.value++;
   } else {
     currentChallengeIndex.value = 0;
+  }
+};
+const handleDeleteExercise = async (recordIds?: number[]) => {
+  if (!recordIds || recordIds.length === 0) return;
+
+  if (!confirm("선택한 운동 기록을 모두 삭제하시겠습니까?")) return;
+
+  try {
+    const promises = recordIds.map((id) => exerciseApi.deleteMyExerciseRecord(id));
+    await Promise.all(promises);
+    await fetchTodayExercises();
+  } catch (e) {
+    console.error("Failed to delete records", e);
+    alert("운동 기록 삭제에 실패했습니다.");
   }
 };
 </script>
@@ -255,106 +390,69 @@ const nextChallenge = () => {
         <!-- 세로 라인 -->
         <div class="absolute left-[88px] top-0 bottom-0 w-0.5 bg-zinc-800"></div>
 
-        <!-- 타임라인 아이템들 -->
+        <!-- 타임라인 아이템들 (Unified) -->
         <div class="space-y-6">
-          <!-- 08:10 - 아침 식단 -->
-          <div class="relative flex gap-6">
-            <div class="absolute -left-24 text-zinc-400 w-16 text-right">08:10</div>
-            <div class="absolute left-[-7px] w-3 h-3 bg-emerald-500 rounded-full border-2 border-zinc-950"></div>
+          <div v-for="item in timelineItems" :key="item.id" class="relative flex gap-6">
+            <div class="absolute -left-24 text-zinc-400 w-16 text-right">{{ item.time }}</div>
+
+            <!-- Dot (Color based on Type) -->
+            <div
+              class="absolute left-[-7px] w-3 h-3 rounded-full border-2 border-zinc-950"
+              :class="item.colorClass === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500'"
+            ></div>
 
             <div class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5">
               <div class="flex items-start gap-4">
                 <div
-                  class="w-20 h-20 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-lg flex items-center justify-center flex-shrink-0"
+                  class="w-20 h-20 rounded-lg flex items-center justify-center flex-shrink-0"
+                  :class="
+                    item.colorClass === 'emerald'
+                      ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20'
+                      : 'bg-gradient-to-br from-blue-500/20 to-cyan-500/20'
+                  "
                 >
-                  <Utensils class="w-8 h-8 text-emerald-500" />
+                  <component
+                    :is="item.icon"
+                    class="w-8 h-8"
+                    :class="item.colorClass === 'emerald' ? 'text-emerald-500' : 'text-blue-500'"
+                  />
                 </div>
                 <div class="flex-1 space-y-2">
-                  <h3 class="text-white">아침 식단 · 08:10</h3>
-                  <p class="text-zinc-300">밥, 계란후라이, 김치</p>
-                  <p class="text-sm text-zinc-400">540 kcal · 탄 65g · 단백질 18g · 지방 15g</p>
+                  <h3 class="text-white">
+                    {{ item.title }} <span v-if="item.time" class="text-zinc-500 font-normal">· {{ item.time }}</span>
+                  </h3>
+                  <p class="text-zinc-300">{{ item.desc }}</p>
+                  <p class="text-sm text-zinc-400">{{ item.subDesc }}</p>
                   <div class="flex gap-4 pt-2">
-                    <button class="text-sm text-zinc-400 hover:text-white transition-colors">수정</button>
-                    <button class="text-sm text-zinc-400 hover:text-red-400 transition-colors">삭제</button>
+                    <button
+                      v-if="item.type === 'EXERCISE' && item.recordIds"
+                      @click="
+                        router.push({
+                          path: '/exercise-register',
+                          query: { mode: 'edit', ids: item.recordIds.join(',') },
+                        })
+                      "
+                      class="text-sm text-zinc-400 hover:text-white transition-colors"
+                    >
+                      수정
+                    </button>
+                    <button
+                      v-if="item.type === 'EXERCISE' && item.recordIds"
+                      @click="handleDeleteExercise(item.recordIds)"
+                      class="text-sm text-zinc-400 hover:text-red-400 transition-colors"
+                    >
+                      삭제
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- 12:30 - 점심 식단 -->
-          <div class="relative flex gap-6">
-            <div class="absolute -left-24 text-zinc-400 w-16 text-right">12:30</div>
-            <div class="absolute left-[-7px] w-3 h-3 bg-emerald-500 rounded-full border-2 border-zinc-950"></div>
-
-            <div class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5">
-              <div class="flex items-start gap-4">
-                <div
-                  class="w-20 h-20 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-lg flex items-center justify-center flex-shrink-0"
-                >
-                  <Utensils class="w-8 h-8 text-emerald-500" />
-                </div>
-                <div class="flex-1 space-y-2">
-                  <h3 class="text-white">점심 식단 · 12:30</h3>
-                  <p class="text-zinc-300">치킨 샐러드, 고구마, 방울토마토</p>
-                  <p class="text-sm text-zinc-400">650 kcal · 탄 45g · 단백질 38g · 지방 22g</p>
-                  <div class="flex gap-4 pt-2">
-                    <button class="text-sm text-zinc-400 hover:text-white transition-colors">수정</button>
-                    <button class="text-sm text-zinc-400 hover:text-red-400 transition-colors">삭제</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 17:00 - 간식 -->
-          <div class="relative flex gap-6">
-            <div class="absolute -left-24 text-zinc-400 w-16 text-right">17:00</div>
-            <div class="absolute left-[-7px] w-3 h-3 bg-emerald-500 rounded-full border-2 border-zinc-950"></div>
-
-            <div class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5">
-              <div class="flex items-start gap-4">
-                <div
-                  class="w-20 h-20 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-lg flex items-center justify-center flex-shrink-0"
-                >
-                  <Utensils class="w-8 h-8 text-emerald-500" />
-                </div>
-                <div class="flex-1 space-y-2">
-                  <h3 class="text-white">간식 · 17:00</h3>
-                  <p class="text-zinc-300">바나나, 아몬드</p>
-                  <p class="text-sm text-zinc-400">160 kcal · 탄 25g · 단백질 4g · 지방 6g</p>
-                  <div class="flex gap-4 pt-2">
-                    <button class="text-sm text-zinc-400 hover:text-white transition-colors">수정</button>
-                    <button class="text-sm text-zinc-400 hover:text-red-400 transition-colors">삭제</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 20:00 - 운동 -->
-          <div class="relative flex gap-6">
-            <div class="absolute -left-24 text-zinc-400 w-16 text-right">20:00</div>
-            <div class="absolute left-[-7px] w-3 h-3 bg-blue-500 rounded-full border-2 border-zinc-950"></div>
-
-            <div class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5">
-              <div class="flex items-start gap-4">
-                <div
-                  class="w-20 h-20 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-lg flex items-center justify-center flex-shrink-0"
-                >
-                  <Dumbbell class="w-8 h-8 text-blue-500" />
-                </div>
-                <div class="flex-1 space-y-2">
-                  <h3 class="text-white">운동 · 20:00</h3>
-                  <p class="text-zinc-300">런닝 30분, 스쿼트 3세트</p>
-                  <p class="text-sm text-zinc-400">320 kcal 소모</p>
-                  <div class="flex gap-4 pt-2">
-                    <button class="text-sm text-zinc-400 hover:text-white transition-colors">수정</button>
-                    <button class="text-sm text-zinc-400 hover:text-red-400 transition-colors">삭제</button>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <!-- Empty State -->
+          <div v-if="timelineItems.length === 0" class="relative flex gap-6 items-center">
+            <div class="absolute -left-24 text-zinc-400 w-16 text-right">...</div>
+            <div class="flex-1 p-5 text-center text-zinc-500 text-sm">오늘의 기록이 없습니다.</div>
           </div>
         </div>
       </div>
