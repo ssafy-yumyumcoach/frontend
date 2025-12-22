@@ -52,7 +52,7 @@ const getLocalDateString = () => {
 };
 
 const selectedDate = ref(getLocalDateString());
-const selectedTime = ref(new Date().toTimeString().slice(0, 5)); // HH:MM from local time
+const selectedTime = ref(new Date().toTimeString().slice(0, 5));
 const searchQuery = ref("");
 const selectedCategory = ref("전체");
 const exercises = ref<Exercise[]>([]);
