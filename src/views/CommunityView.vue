@@ -9,8 +9,8 @@ import Textarea from "@/components/ui/Textarea.vue";
 import Dialog from "@/components/ui/Dialog.vue";
 import Label from "@/components/ui/Label.vue";
 
-import communityApi, { type PostSummary } from '@/api/community';
-import imageApi from '@/api/image';
+import communityApi, { type PostSummary } from "@/api/community";
+import imageApi from "@/api/image";
 
 const router = useRouter();
 
@@ -45,14 +45,18 @@ onMounted(() => {
 
 // --- Navigation ---
 const goToDetail = (postId: number) => {
-    router.push({ name: 'community-detail', params: { id: postId } });
+  router.push({ name: "community-detail", params: { id: postId } });
 };
 
 const goToProfile = (userId: number) => {
-    router.push({ name: 'user-profile', params: { id: userId } });
+  router.push({ name: "user-profile", params: { id: userId } });
 };
 
 // --- Create Post Actions ---
+const openWriteDialog = () => {
+  isWriteDialogOpen.value = true;
+};
+
 const triggerFileInput = () => {
   fileInput.value?.click();
 };
@@ -86,9 +90,7 @@ const handleSubmitPost = async () => {
     // 1. Upload images
     const imageUrls: string[] = [];
     if (selectedImages.value.length > 0) {
-      const uploadPromises = selectedImages.value.map(img => 
-        imageApi.uploadImage(img.file, 'POST')
-      );
+      const uploadPromises = selectedImages.value.map((img) => imageApi.uploadImage(img.file, "POST"));
       const results = await Promise.all(uploadPromises);
       imageUrls.push(...results);
     }
@@ -104,14 +106,14 @@ const handleSubmitPost = async () => {
     newPostContent.value = "";
     newPostTitle.value = "";
     selectedImages.value = [];
-    if (fileInput.value) fileInput.value.value = '';
+    if (fileInput.value) fileInput.value.value = "";
     isWriteDialogOpen.value = false;
-    
-    alert('게시글이 작성되었습니다.');
+
+    alert("게시글이 작성되었습니다.");
     fetchPosts();
   } catch (error: any) {
-    console.error('Failed to create post:', error);
-    alert('게시글 작성에 실패했습니다.');
+    console.error("Failed to create post:", error);
+    alert("게시글 작성에 실패했습니다.");
   }
 };
 
@@ -120,15 +122,29 @@ const formatTime = (dateStr: string) => {
   const date = new Date(dateStr);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
+
+  const minutes = Math.floor(diff / (1000 * 60));
   const hours = Math.floor(diff / (1000 * 60 * 60));
-  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (diff < 1000 * 60) {
+    return "방금 전";
+  }
+
+  if (minutes < 60) {
+    return `${minutes}분 전`;
+  }
+
   if (hours < 24) {
-    if (hours < 1) return '방금 전';
     return `${hours}시간 전`;
   }
+
+  if (days < 7) {
+    return `${days}일 전`;
+  }
+
   return date.toLocaleDateString();
 };
-
 </script>
 
 <template>
@@ -143,20 +159,17 @@ const formatTime = (dateStr: string) => {
     </div>
 
     <!-- Feed List -->
-    <div v-if="isLoading" class="text-center text-zinc-500 py-10">
-      로딩 중...
-    </div>
-    
+    <div v-if="isLoading" class="text-center text-zinc-500 py-10">로딩 중...</div>
+
     <div v-else class="space-y-4">
-      <div 
-        v-for="post in posts" 
-        :key="post.postId" 
-        class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-700 transition flex h-40"
+      <div
+        v-for="post in posts"
+        :key="post.postId"
+        class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-700 transition flex min-h-40"
         @click="goToDetail(post.postId)"
       >
         <!-- Left Content Section -->
-        <div class="flex-1 p-5 flex flex-col justify-between min-w-0">
-          
+        <div class="flex-1 p-5 flex flex-col justify-center gap-3 min-w-0">
           <!-- Top Section: Author + Content -->
           <div>
             <div class="flex items-center gap-3 mb-2">
@@ -177,18 +190,18 @@ const formatTime = (dateStr: string) => {
 
           <!-- Bottom Section: Stats -->
           <div class="flex items-center gap-4 text-zinc-400 text-sm">
-            <span class="flex items-center gap-1">
-              <Heart class="w-4 h-4" /> {{ post.likeCount }}
-            </span>
-            <span class="flex items-center gap-1">
-              <MessageCircle class="w-4 h-4" /> {{ post.commentCount }}
-            </span>
+            <span class="flex items-center gap-1"> <Heart class="w-4 h-4" /> {{ post.likeCount }} </span>
+            <span class="flex items-center gap-1"> <MessageCircle class="w-4 h-4" /> {{ post.commentCount }} </span>
           </div>
         </div>
-        
+
         <!-- Right Image Section (With slight padding) -->
         <div v-if="post.thumbnailUrl || (post.images && post.images.length > 0)" class="w-40 flex-shrink-0 p-2">
-          <img :src="post.thumbnailUrl || post.images?.[0]" class="w-full h-full object-cover rounded-lg bg-zinc-800" loading="lazy" />
+          <img
+            :src="post.thumbnailUrl || post.images?.[0]"
+            class="w-full h-full object-cover rounded-lg bg-zinc-800"
+            loading="lazy"
+          />
         </div>
       </div>
     </div>
@@ -213,26 +226,26 @@ const formatTime = (dateStr: string) => {
             class="bg-zinc-800 border-zinc-700 text-white"
           />
         </div>
-        
+
         <!-- Image Selection -->
         <div class="space-y-2">
           <Label class="text-zinc-300">이미지 (선택)</Label>
           <div class="grid grid-cols-4 gap-2 mb-2" v-if="selectedImages.length > 0">
-            <div v-for="(img, idx) in selectedImages" :key="idx" class="relative aspect-square rounded-lg overflow-hidden bg-zinc-800">
+            <div
+              v-for="(img, idx) in selectedImages"
+              :key="idx"
+              class="relative aspect-square rounded-lg overflow-hidden bg-zinc-800"
+            >
               <img :src="img.preview" class="w-full h-full object-cover" />
-              <button @click="removeImage(idx)" class="absolute top-1 right-1 bg-black/50 rounded-full p-1 text-white hover:bg-black/70">
+              <button
+                @click="removeImage(idx)"
+                class="absolute top-1 right-1 bg-black/50 rounded-full p-1 text-white hover:bg-black/70"
+              >
                 <X class="w-3 h-3" />
               </button>
             </div>
           </div>
-          <input
-            type="file"
-            ref="fileInput"
-            class="hidden"
-            accept="image/*"
-            multiple
-            @change="handleFileChange"
-          />
+          <input type="file" ref="fileInput" class="hidden" accept="image/*" multiple @change="handleFileChange" />
           <Button
             variant="outline"
             class="w-full bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700 hover:text-white"
@@ -257,14 +270,13 @@ const formatTime = (dateStr: string) => {
   </div>
 </template>
 
-
 <style scoped>
 .scrollbar-hide::-webkit-scrollbar {
-    display: none;
+  display: none;
 }
 
 .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 </style>
