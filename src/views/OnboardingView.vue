@@ -114,20 +114,33 @@ const goalMap: Record<string, string> = {
 
 const handleSubmit = async () => {
   try {
-      // 1. Goal Mapping (Reverse of MyPage logic or just simple mapping?)
-      // MyPage logic: API returns Korean string like "체중 감량".
-      // UI uses IDs: 'weight-loss'.
-      // So we need to send Korean string "체중 감량" if selected 'weight-loss'.
-      // But wait! Providing a string to backend.
-      // MyPageView `handleHealthInfoSave`: `selectedGoal = Object.keys(goalMap).find(...) || found`.
-      // MyPageView `goalMap` was `{'체중 감량': 'weight-loss'}`.
-      // Here in Onboarding, `goalOptions` use `weight-loss` IDs.
-      // So if I select 'weight-loss', I should send '체중 감량'.
-      // Therefore, I need `goalMap` to be `{'weight-loss': '체중 감량'}`.
-      
+      // 유효성 검사
+      if (!store.birthDate) {
+          alert("생년월일을 입력해주세요.");
+          return;
+      }
+
+      const heightNum = Number(store.height);
+      const weightNum = Number(store.weight);
+      const targetWeightNum = Number(store.targetWeight);
+
+      if (!store.height || isNaN(heightNum) || heightNum <= 0) {
+          alert("키를 올바르게 입력해주세요.");
+          return;
+      }
+
+      if (!store.weight || isNaN(weightNum) || weightNum <= 0) {
+          alert("현재 몸무게를 올바르게 입력해주세요.");
+          return;
+      }
+
+      if (!store.targetWeight || isNaN(targetWeightNum) || targetWeightNum <= 0) {
+          alert("목표 몸무게를 올바르게 입력해주세요.");
+          return;
+      }
+
+      // 1. Goal Mapping
       let selectedGoal: string | null = null;
-      // We pick the first selected goal for simplicty as API allows one string currently?
-      // Or if `store.goals` has multiple, we pick one.
       const foundId = store.goals.find(g => ['weight-loss', 'maintain', 'muscle-gain', 'disease-management'].includes(g));
       
       if (foundId) {
@@ -136,13 +149,14 @@ const handleSubmit = async () => {
           selectedGoal = otherGoal.value;
       }
 
-      // Ensure activityLevel is uppercase (it's already uppercase in store, but just in case)
+      // Ensure activityLevel is uppercase
       const activityLevelValue = store.activityLevel.toUpperCase();
 
       const payload: any = {
-          height: Number(store.height),
-          weight: Number(store.weight),
-          goalWeight: Number(store.targetWeight),
+          birthDate: store.birthDate,
+          height: heightNum,
+          weight: weightNum,
+          goalWeight: targetWeightNum,
           activityLevel: activityLevelValue,
           hasDiabetes: store.diseases.includes('diabetes'),
           hasHypertension: store.diseases.includes('hypertension'),
@@ -150,11 +164,6 @@ const handleSubmit = async () => {
           otherDisease: store.diseases.includes('other') ? (otherDisease.value || null) : null,
           goal: selectedGoal
       };
-
-      // Add birthDate if provided
-      if (store.birthDate) {
-          payload.birthDate = store.birthDate;
-      }
 
       console.log('Onboarding payload:', payload);
       await userApi.updateMyHealthInfo(payload);
@@ -167,9 +176,21 @@ const handleSubmit = async () => {
 
   } catch (e: any) {
       console.error("Onboarding saving failed", e);
-      const errorMessage = e.response?.data?.message || e.message || "알 수 없는 오류";
-      console.error("Error details:", e.response?.data);
-      alert(`정보 저장에 실패했습니다: ${errorMessage}`);
+      const errorData = e.response?.data;
+      const errorMessage = errorData?.message || e.message || "알 수 없는 오류";
+      console.error("Error details:", errorData);
+      console.error("Full error response:", e.response);
+      
+      // 서버에서 더 자세한 에러 메시지가 있는지 확인
+      let alertMessage = `정보 저장에 실패했습니다: ${errorMessage}`;
+      if (errorData?.errors) {
+          const errorList = Object.entries(errorData.errors)
+              .map(([field, messages]: [string, any]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
+              .join('\n');
+          alertMessage += `\n\n상세 오류:\n${errorList}`;
+      }
+      
+      alert(alertMessage);
   }
 };
 

@@ -6,18 +6,20 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   const gender = ref<"male" | "female">("male");
   const age = ref<number>(25);
   const birthDate = ref<string>("");
-  const height = ref<number | null>(null);
-  const weight = ref<number | null>(null);
-  const targetWeight = ref<number | null>(null);
+  const height = ref<string>("");
+  const weight = ref<string>("");
+  const targetWeight = ref<string>("");
   const activityLevel = ref<string>("MODERATE");
   const goals = ref<string[]>([]);
   const diseases = ref<string[]>([]);
 
   // Getters (Computed)
   const bmi = computed(() => {
-    if (!height.value || !weight.value) return '0.0';
-    const h = height.value / 100;
-    return (weight.value / (h * h)).toFixed(1);
+    const h = Number(height.value);
+    const w = Number(weight.value);
+    if (!h || !w) return '0.0';
+    const heightInMeters = h / 100;
+    return (w / (heightInMeters * heightInMeters)).toFixed(1);
   });
 
   // Actions
@@ -33,16 +35,16 @@ export const useOnboardingStore = defineStore("onboarding", () => {
     birthDate.value = val;
   }
 
-  function setHeight(val: number | null) {
-    height.value = val;
+  function setHeight(val: string | number | null) {
+    height.value = val === null ? "" : String(val);
   }
 
-  function setWeight(val: number | null) {
-    weight.value = val;
+  function setWeight(val: string | number | null) {
+    weight.value = val === null ? "" : String(val);
   }
 
-  function setTargetWeight(val: number | null) {
-    targetWeight.value = val;
+  function setTargetWeight(val: string | number | null) {
+    targetWeight.value = val === null ? "" : String(val);
   }
 
   function setActivityLevel(val: string) {
@@ -71,9 +73,9 @@ export const useOnboardingStore = defineStore("onboarding", () => {
     gender.value = "male";
     age.value = 25;
     birthDate.value = "";
-    height.value = null;
-    weight.value = null;
-    targetWeight.value = null;
+    height.value = "";
+    weight.value = "";
+    targetWeight.value = "";
     activityLevel.value = "MODERATE";
     goals.value = [];
     diseases.value = [];
