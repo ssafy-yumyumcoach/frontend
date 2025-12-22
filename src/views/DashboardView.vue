@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } from "@/api/exercise/index";
+import aiApi, { type MealPlanResponse } from "@/api/ai/index";
 
 const router = useRouter();
 
@@ -139,8 +140,46 @@ const fetchTodayExercises = async () => {
   }
 };
 
+const aiMealPlan = ref<MealPlanResponse | null>(null);
+const isAiLoading = ref(false);
+
+const loadMealPlan = async () => {
+  isAiLoading.value = true;
+  const today = getTodayDate();
+
+  try {
+    // 1. Try to fetch existing plan
+    const res = await aiApi.getMealPlan(today);
+
+    if (res.data && res.data.generated) {
+      aiMealPlan.value = res.data;
+    } else {
+      // 2. If generated=false (or empty), generate new plan
+      console.log("Meal plan not generated yet. Generating new one...");
+      const genRes = await aiApi.generateMealPlan({ targetDate: today });
+      aiMealPlan.value = genRes.data;
+    }
+  } catch (e: any) {
+    // Fallback: If 404 or other issues, try generating
+    if (e.response && e.response.status === 404) {
+      try {
+        console.log("No existing meal plan found (404). Generating new one...");
+        const genRes = await aiApi.generateMealPlan({ targetDate: today });
+        aiMealPlan.value = genRes.data;
+      } catch (genError) {
+        console.error("Failed to generate meal plan", genError);
+      }
+    } else {
+      console.error("Failed to fetch meal plan", e);
+    }
+  } finally {
+    isAiLoading.value = false;
+  }
+};
+
 onMounted(() => {
   fetchTodayExercises();
+  loadMealPlan();
 });
 
 // Dummy Data for Challenges (Only Active)
@@ -263,20 +302,27 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
 
     <!-- 중간 영역 - 좌: AI 식단 / 우: 챌린지 캐러셀 -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- 좌측: AI 추천 식단 계획 (유지) -->
+      <!-- 좌측: AI 추천 식단 계획 -->
       <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 h-full flex flex-col">
         <div class="flex items-center gap-2 h-8">
           <Sparkles class="w-5 h-5 text-emerald-500" />
           <h2 class="text-xl text-white leading-none">AI 추천 식단 계획</h2>
         </div>
-        <div class="flex-1 flex flex-col justify-between gap-4">
+
+        <div v-if="isAiLoading" class="flex-1 flex items-center justify-center text-zinc-500">
+          식단을 생성하고 있습니다...
+        </div>
+
+        <div v-else-if="aiMealPlan" class="flex-1 flex flex-col justify-between gap-4">
           <!-- 아침 -->
           <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 space-y-2">
             <div class="flex items-center gap-2">
               <div class="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs rounded">아침</div>
             </div>
-            <div class="text-white">현미밥 + 닭가슴살 + 샐러드</div>
-            <div class="text-sm text-zinc-400">약 550kcal · 단백질 위주</div>
+            <div class="text-white">{{ aiMealPlan.breakfast.menu }}</div>
+            <div class="text-sm text-zinc-400">
+              {{ Math.round(aiMealPlan.breakfast.calories) }}kcal · {{ aiMealPlan.breakfast.comment }}
+            </div>
           </div>
 
           <!-- 점심 -->
@@ -284,8 +330,10 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             <div class="flex items-center gap-2">
               <div class="px-2 py-1 bg-amber-500/20 text-amber-400 text-xs rounded">점심</div>
             </div>
-            <div class="text-white">연어 구이 + 퀴노아 + 브로콜리</div>
-            <div class="text-sm text-zinc-400">약 650kcal · 오메가3 풍부</div>
+            <div class="text-white">{{ aiMealPlan.lunch.menu }}</div>
+            <div class="text-sm text-zinc-400">
+              {{ Math.round(aiMealPlan.lunch.calories) }}kcal · {{ aiMealPlan.lunch.comment }}
+            </div>
           </div>
 
           <!-- 저녁 -->
@@ -293,10 +341,14 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             <div class="flex items-center gap-2">
               <div class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs rounded">저녁</div>
             </div>
-            <div class="text-white">두부 스테이크 + 고구마 + 애호박 볶음</div>
-            <div class="text-sm text-zinc-400">약 480kcal · 저칼로리 고단백</div>
+            <div class="text-white">{{ aiMealPlan.dinner.menu }}</div>
+            <div class="text-sm text-zinc-400">
+              {{ Math.round(aiMealPlan.dinner.calories) }}kcal · {{ aiMealPlan.dinner.comment }}
+            </div>
           </div>
         </div>
+
+        <div v-else class="flex-1 flex items-center justify-center text-zinc-500">식단 정보를 불러오지 못했습니다.</div>
       </div>
 
       <!-- 우측: 참여 중인 챌린지 (캐러셀) -->
