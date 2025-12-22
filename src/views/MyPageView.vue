@@ -1,81 +1,70 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import { Upload, Save, Lock } from "lucide-vue-next";
+import { Upload, Save, Lock, X, Pencil } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Label from "@/components/ui/Label.vue";
 import Textarea from "@/components/ui/Textarea.vue";
 import Avatar from "@/components/ui/Avatar.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
+import userApi, { type MyPageResponse, type Title as ApiTitle, type UserSummary } from "@/api/user";
+import imageApi from "@/api/image";
 
 const router = useRouter();
 const authStore = useAuthStore();
 
+// UI uses a local interface for badges, let's adapt API Title to this or use it directly
+// The UI expects: id, name, description, icon, difficulty, acquired, acquiredDate
 interface Badge {
   id: string;
   name: string;
   description: string;
   icon: string;
-  difficulty: "초급" | "중급" | "고급";
+  difficulty: string | null;
   acquired: boolean;
   acquiredDate?: string;
 }
 
+const isLoading = ref(true);
+
 // Profile State
 const profileImage = ref<string>("");
-const nickname = ref("홍길동");
-const email = ref("hong@example.com");
+const nickname = ref("");
+const email = ref("");
 const bio = ref("");
+const userId = ref<number>(0);
+const createdAt = ref("");
+const selectedFile = ref<File | null>(null);
+
+// Original Data for Diffing
+const originalBasicInfo = ref({
+    username: "",
+    introduction: "",
+    profileImageUrl: ""
+});
+
+const originalHealthInfo = ref<any>({});
+
+// Follow Stats
+const followersCount = ref(0);
+const followingsCount = ref(0);
 
 // Health Info State
-const height = ref("170");
-const weight = ref("65");
-const targetWeight = ref("60");
+const height = ref("");
+const weight = ref("");
+const targetWeight = ref("");
 const diseases = ref<string[]>([]);
 const otherDisease = ref("");
-const goals = ref<string[]>(["weight-loss"]);
+const goals = ref<string[]>([]); // UI allows multiple, API returns single string? Assuming mapping or single
 const otherGoal = ref("");
 const activityLevel = ref("medium");
 
 // Badge Data
-const badges = ref<Badge[]>([
-  {
-    id: "1",
-    name: "11월 식단 기록 챌린지",
-    description: "11월 식단 기록 챌린지 완료",
-    icon: "🥗",
-    difficulty: "중급",
-    acquired: true,
-    acquiredDate: "2025. 11. 15",
-  },
-  {
-    id: "2",
-    name: "10월 운동 습관 챌린지",
-    description: "10월 운동 습관 챌린지 완료",
-    icon: "💪",
-    difficulty: "고급",
-    acquired: true,
-    acquiredDate: "2025. 10. 31",
-  },
-  {
-    id: "3",
-    name: "11월 단백질 챌린지",
-    description: "11월 단백질 챌린지 완료",
-    icon: "🥩",
-    difficulty: "초급",
-    acquired: false,
-  },
-  {
-    id: "4",
-    name: "12월 챌린지",
-    description: "12월 챌린지 참여 예정",
-    icon: "🎯",
-    difficulty: "중급",
-    acquired: false,
-  },
-]);
+const badges = ref<Badge[]>([]);
+const currentTitleId = ref<number | null>(null);
+const currentTitleName = ref<string | null>(null);
 
 const diseaseOptions = [
   { id: "diabetes", label: "당뇨" },
@@ -92,32 +81,144 @@ const goalOptions = [
   { id: "other", label: "기타" },
 ];
 
+// Mapping helper for goals (Korean name <-> English ID)
+const goalMap: Record<string, string> = {
+    '체중 감량': 'weight-loss',
+    '체중 유지': 'maintain',
+    '근육 증가': 'muscle-gain',
+    '질환 관리': 'disease-management',
+};
+
 const activityOptions = [
   {
-    id: "low",
+    id: "LOW",
     label: "낮음",
     description: "하루 대부분 앉아서 생활해요",
   },
   {
-    id: "medium",
+    id: "MODERATE",
     label: "보통",
     description: "가벼운 활동이나 주 1~2회 운동을 해요",
   },
   {
-    id: "high",
+    id: "HIGH",
     label: "높음",
     description: "하루 활동량이 많거나 주 3회 이상 운동해요",
   },
 ];
 
-const triggerFileInput = () => {
-  document.getElementById("profile-image")?.click();
+const fetchMyPageData = async () => {
+    try {
+        isLoading.value = true;
+        const res = await userApi.getMyPage();
+        const data = res.data;
+
+        // Basic Info
+        userId.value = data.basic.userId;
+        email.value = data.basic.email;
+        nickname.value = data.basic.username;
+        
+        let imgUrl = data.basic.profileImageUrl;
+        // 기존 DB 데이터에 이중 도메인이 포함된 경우가 있어 클라이언트에서 임시로 처리
+        const cdnDomain = 'https://d3sn2183nped6z.cloudfront.net/';
+        if (imgUrl && imgUrl.includes(cdnDomain + cdnDomain)) {
+            imgUrl = imgUrl.replace(cdnDomain + cdnDomain, cdnDomain);
+        }
+        profileImage.value = imgUrl;
+
+        bio.value = data.basic.introduction || "";
+        createdAt.value = data.basic.createdAt;
+
+        // Save original for diffing
+        originalBasicInfo.value = {
+            username: data.basic.username,
+            introduction: data.basic.introduction || "",
+            profileImageUrl: data.basic.profileImageUrl
+        };
+
+        // Health Info
+        const h = data.health;
+        height.value = h.height?.toString() || "";
+        weight.value = h.weight?.toString() || "";
+        targetWeight.value = h.goalWeight?.toString() || "";
+        activityLevel.value = h.activityLevel || "MODERATE";
+
+        // Save original health for diffing
+        originalHealthInfo.value = { ...h };
+
+        // Map boolean diseases to array
+        const dList = [];
+        if (h.hasDiabetes) dList.push("diabetes");
+        if (h.hasHypertension) dList.push("hypertension");
+        if (h.hasHyperlipidemia) dList.push("hyperlipidemia");
+        if (h.otherDisease) {
+            dList.push("other");
+            otherDisease.value = h.otherDisease;
+        }
+        diseases.value = dList;
+
+        // Map goal string to array
+        goals.value = [];
+        if (h.goal) {
+            // Try to match specific keys first
+            const foundKey = Object.keys(goalMap).find(key => h.goal === key);
+            if (foundKey) {
+                goals.value.push(goalMap[foundKey]);
+            } else {
+                // assume 'other' or custom
+                if (Object.values(goalMap).includes(h.goal)) {
+                    // if API returned english ID
+                     goals.value.push(h.goal);
+                } else {
+                     goals.value.push("other");
+                     otherGoal.value = h.goal;
+                }
+            }
+        }
+
+        // Badges
+        currentTitleId.value = data.badges.currentTitleId;
+        currentTitleName.value = data.badges.currentTitleName;
+        
+        // Map API titles to UI Badge interface
+        // API returns only ACQUIRED titles usually?
+        badges.value = data.badges.titles.map((t: ApiTitle) => ({
+            id: t.titleId.toString(),
+            name: t.name,
+            description: t.description,
+            icon: t.iconEmoji,
+            difficulty: t.difficultyName,
+            acquired: true, // If returned by API as obtained
+            acquiredDate: t.obtainedAt ? t.obtainedAt.split('T')[0] : ""
+        }));
+
+        // Follow
+        followersCount.value = data.follow.followersCount;
+        followingsCount.value = data.follow.followingsCount;
+
+    } catch (error) {
+        console.error("Failed to fetch my page:", error);
+        // alert("정보를 불러오는데 실패했습니다.");
+    } finally {
+        isLoading.value = false;
+    }
 };
+
+onMounted(() => {
+    fetchMyPageData();
+});
+
+
+
+// ... existing code ...
+
+
 
 const handleProfileImageUpload = (e: Event) => {
   const target = e.target as HTMLInputElement;
   const file = target.files?.[0];
   if (file) {
+    selectedFile.value = file;
     const reader = new FileReader();
     reader.onloadend = () => {
       profileImage.value = reader.result as string;
@@ -144,21 +245,132 @@ const toggleGoal = (id: string) => {
   }
 };
 
-const handleProfileSave = () => {
-  console.log("프로필 저장:", { nickname: nickname.value, bio: bio.value });
+const handleProfileSave = async () => {
+    try {
+        const payload: any = {};
+        let hasChanges = false;
+
+        // 1. Image Upload
+        if (selectedFile.value) {
+            const { data: presign } = await imageApi.getPresignedUrl({
+                purpose: 'PROFILE',
+                fileName: selectedFile.value.name,
+                contentType: selectedFile.value.type
+            });
+            
+            await imageApi.uploadToS3(presign.presignedUrl, selectedFile.value);
+            // Send objectKey instead of full URL to avoid backend double-prefixing
+            payload.profileImageUrl = presign.objectKey; 
+            hasChanges = true;
+        }
+
+        // 2. Nickname Change
+        if (nickname.value !== originalBasicInfo.value.username) {
+            payload.username = nickname.value;
+            hasChanges = true;
+        }
+
+        // 3. Bio Change
+        if (bio.value !== originalBasicInfo.value.introduction) {
+            payload.introduction = bio.value;
+            hasChanges = true;
+        }
+
+        if (!hasChanges) {
+            alert("변경 사항이 없습니다.");
+            return;
+        }
+
+        await userApi.updateMyBasicInfo(payload);
+        
+        // Update original to new state
+        if (payload.username) originalBasicInfo.value.username = payload.username;
+        if (payload.introduction) originalBasicInfo.value.introduction = payload.introduction;
+        if (payload.profileImageUrl) originalBasicInfo.value.profileImageUrl = payload.profileImageUrl;
+
+        alert("프로필이 저장되었습니다.");
+        selectedFile.value = null;
+
+    } catch (e: any) {
+        if (e.response?.status === 409) {
+            alert("이미 사용 중인 닉네임입니다.");
+        } else {
+            console.error(e);
+            alert("프로필 저장 실패");
+        }
+    }
 };
 
-const handleHealthInfoSave = () => {
-  console.log("건강 정보 저장:", {
-    height: height.value,
-    weight: weight.value,
-    targetWeight: targetWeight.value,
-    diseases: diseases.value,
-    otherDisease: otherDisease.value,
-    goals: goals.value,
-    otherGoal: otherGoal.value,
-    activityLevel: activityLevel.value,
-  });
+const handleHealthInfoSave = async () => {
+    // 1. Determine selected goal string
+    let selectedGoal: string | null = null;
+    const standardGoals = ['weight-loss', 'maintain', 'muscle-gain', 'disease-management'];
+    const found = standardGoals.find(g => goals.value.includes(g));
+    
+    if (found) {
+        // Find Korean label or use mapped value
+        // API expects Korean string? "goal": "체지방 감량"
+        // goalMap keys are Korean: {'체중 감량': 'weight-loss'}
+        // We need to reverse map: 'weight-loss' -> '체중 감량'
+        selectedGoal = Object.keys(goalMap).find(key => goalMap[key] === found) || found; 
+    } else if (goals.value.includes('other')) {
+        selectedGoal = otherGoal.value;
+    }
+
+    // 2. Construct current data object to compare with API structure
+    const currentData = {
+        height: Number(height.value),
+        weight: Number(weight.value),
+        goalWeight: Number(targetWeight.value),
+        activityLevel: activityLevel.value,
+        hasDiabetes: diseases.value.includes('diabetes'),
+        hasHypertension: diseases.value.includes('hypertension'),
+        hasHyperlipidemia: diseases.value.includes('hyperlipidemia'),
+        otherDisease: diseases.value.includes('other') ? otherDisease.value : null,
+        goal: selectedGoal
+    };
+
+    // 3. Diffing
+    const payload: any = {};
+    const original = originalHealthInfo.value;
+    let hasChanges = false;
+
+    if (currentData.height !== original.height) { payload.height = currentData.height; hasChanges = true; }
+    if (currentData.weight !== original.weight) { payload.weight = currentData.weight; hasChanges = true; }
+    if (currentData.goalWeight !== original.goalWeight) { payload.goalWeight = currentData.goalWeight; hasChanges = true; }
+    if (currentData.activityLevel !== original.activityLevel) { payload.activityLevel = currentData.activityLevel; hasChanges = true; }
+    
+    if (currentData.hasDiabetes !== original.hasDiabetes) { payload.hasDiabetes = currentData.hasDiabetes; hasChanges = true; }
+    if (currentData.hasHypertension !== original.hasHypertension) { payload.hasHypertension = currentData.hasHypertension; hasChanges = true; }
+    if (currentData.hasHyperlipidemia !== original.hasHyperlipidemia) { payload.hasHyperlipidemia = currentData.hasHyperlipidemia; hasChanges = true; }
+    
+    // For nullable strings, handle carefully
+    if (currentData.otherDisease !== original.otherDisease) { 
+        payload.otherDisease = currentData.otherDisease; 
+        hasChanges = true; 
+    }
+    
+    if (currentData.goal !== original.goal) { 
+        payload.goal = currentData.goal; 
+        hasChanges = true; 
+    }
+
+    if (!hasChanges) {
+        alert("변경 사항이 없습니다.");
+        return;
+    }
+
+    try {
+        await userApi.updateMyHealthInfo(payload);
+        
+        // Update original to new state
+        Object.assign(originalHealthInfo.value, currentData);
+        
+        alert("건강 정보가 저장되었습니다.");
+    } catch (e) {
+         console.error(e);
+        alert("건강 정보 저장 실패");
+    }
 };
 
 // Withdrawal State
@@ -229,6 +441,76 @@ const finishWithdrawalFlow = () => {
   router.push("/");
 };
 
+const showFollowModal = ref(false);
+const followModalType = ref<'following' | 'follower'>('following');
+const followModalTitle = ref("");
+const followList = ref<UserSummary[]>([]);
+const isFollowLoading = ref(false);
+
+const openFollowModal = async (type: 'following' | 'follower') => {
+    showFollowModal.value = true;
+    followModalType.value = type;
+    followModalTitle.value = type === 'following' ? '팔로잉 목록' : '팔로워 목록';
+    isFollowLoading.value = true;
+    followList.value = [];
+
+    try {
+        let res;
+        if (type === 'following') {
+            res = await userApi.getMyFollowings();
+        } else {
+            res = await userApi.getMyFollowers();
+        }
+        followList.value = res.data.users;
+    } catch (e) {
+        console.error(e);
+        alert(`${followModalTitle.value}을 불러오지 못했습니다.`);
+    } finally {
+        isFollowLoading.value = false;
+    }
+};
+
+const closeFollowModal = () => {
+    showFollowModal.value = false;
+    followList.value = [];
+};
+
+
+const handleSetTitle = async (badge: Badge) => {
+    if (!badge.acquired) {
+        alert("획득하지 않은 뱃지입니다.");
+        return;
+    }
+    if (String(badge.id) === String(currentTitleId.value)) {
+        // Already selected
+        return;
+    }
+
+    try {
+        await userApi.updateMyCurrentTitle(Number(badge.id));
+        currentTitleId.value = Number(badge.id);
+        currentTitleName.value = badge.name;
+        alert(`'${badge.name}' 뱃지가 대표 뱃지로 설정되었습니다.`);
+    } catch (e) {
+        console.error(e);
+        alert("대표 뱃지 설정 실패");
+    }
+};
+
+const handleUnsetTitle = async () => {
+    if (!confirm("대표 뱃지를 해제하시겠습니까?")) return;
+
+    try {
+        await userApi.updateMyCurrentTitle(null);
+        currentTitleId.value = null;
+        currentTitleName.value = null;
+        alert("대표 뱃지가 해제되었습니다.");
+    } catch (e) {
+        console.error(e);
+        alert("뱃지 해제 실패");
+    }
+};
+
 
 const getDifficultyColor = (difficulty: string) => {
   switch (difficulty) {
@@ -245,71 +527,102 @@ const getDifficultyColor = (difficulty: string) => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div v-if="isLoading" class="flex justify-center py-20">
+      <div class="text-zinc-400">데이터를 불러오는 중...</div>
+  </div>
+
+  <div v-else class="space-y-6">
     <div class="max-w-5xl mx-auto space-y-6">
       <!-- 섹션 1: 프로필 -->
       <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-8">
-        <div class="flex flex-col lg:flex-row gap-8">
-          <!-- 좌측: 아바타 -->
+        <div class="flex flex-col md:flex-row gap-8 items-center md:items-start">
+          
+          <!-- 좌측: 아바타 & 이미지 변경 -->
           <div class="flex flex-col items-center gap-4">
-            <Avatar :src="profileImage" :fallback="nickname.charAt(0)" class="w-32 h-32 text-4xl" />
-            <div>
-              <input
-                type="file"
-                id="profile-image"
-                accept="image/*"
-                @change="handleProfileImageUpload"
-                class="hidden"
-              />
-              <label for="profile-image">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  class="bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700 cursor-pointer"
-                  @click="triggerFileInput"
+            <div class="relative group">
+                <div class="relative overflow-hidden rounded-full">
+                     <Avatar :src="profileImage" :fallback="nickname.charAt(0)" class="w-32 h-32 text-4xl" />
+                </div>
+                <!-- Upload Overlay/Button -->
+                <input
+                    type="file"
+                    id="profile-image"
+                    accept="image/*"
+                    @change="handleProfileImageUpload"
+                    class="hidden"
+                />
+                <label 
+                    for="profile-image" 
+                    class="absolute bottom-0 right-0 bg-zinc-800 p-2 rounded-full border border-zinc-700 cursor-pointer hover:bg-zinc-700 transition-colors shadow-lg z-10"
+                    title="이미지 변경"
                 >
-                  <Upload class="w-4 h-4 mr-2" />
-                  이미지 변경
-                </Button>
-              </label>
+                    <Upload class="w-4 h-4 text-white" />
+                </label>
             </div>
           </div>
 
           <!-- 우측: 프로필 정보 -->
-          <div class="flex-1 space-y-5">
+          <div class="flex-1 space-y-6 w-full text-center md:text-left">
+            
+            <!-- 1. Nickname & Badge & Email -->
             <div class="space-y-2">
-              <Label for="nickname" class="text-zinc-300">닉네임</Label>
-              <Input id="nickname" v-model="nickname" class="bg-zinc-800 border-zinc-700 text-white" />
+                 <div class="flex flex-col md:flex-row items-center md:items-end gap-3 justify-center md:justify-start">
+                     <!-- Nickname Input -->
+                     <div class="relative">
+                         <input 
+                             type="text" 
+                             v-model="nickname" 
+                             class="bg-transparent border-b border-zinc-700 hover:border-zinc-500 focus:border-emerald-500 transition-colors text-3xl font-bold text-white focus:outline-none w-full md:w-auto text-center md:text-left px-1 pb-1"
+                         />
+                         <Pencil class="w-4 h-4 text-zinc-600 absolute -right-6 top-1/2 -translate-y-1/2 md:block hidden" />
+                     </div>
+
+                     <!-- Badge Pill -->
+                     <span v-if="currentTitleId" class="text-sm px-2 py-1 rounded bg-zinc-800 text-zinc-400 font-normal border border-zinc-700 mb-1">
+                         {{ badges.find(b => b.id === String(currentTitleId))?.name || currentTitleName || '대표 뱃지' }}
+                     </span>
+                 </div>
+                 <div class="text-sm text-zinc-500">{{ email }}</div>
             </div>
 
-            <div class="space-y-2">
-              <Label for="email" class="text-zinc-300">이메일</Label>
-              <Input
-                id="email"
-                v-model="email"
-                readonly
-                class="bg-zinc-800 border-zinc-700 text-zinc-500 cursor-not-allowed"
-              />
+            <!-- 2. Follow Stats -->
+            <div class="flex items-center justify-center md:justify-start gap-6">
+                <div 
+                    class="text-center cursor-pointer hover:text-white transition-colors"
+                    @click="openFollowModal('follower')"
+                >
+                    <div class="text-white font-bold text-xl">{{ followersCount }}</div>
+                    <div class="text-xs text-zinc-500">팔로워</div>
+                </div>
+                <div class="w-px h-8 bg-zinc-800"></div>
+                <div 
+                    class="text-center cursor-pointer hover:text-white transition-colors"
+                    @click="openFollowModal('following')"
+                >
+                    <div class="text-white font-bold text-xl">{{ followingsCount }}</div>
+                    <div class="text-xs text-zinc-500">팔로잉</div>
+                </div>
             </div>
 
+            <!-- 3. Bio -->
             <div class="space-y-2">
-              <Label for="bio" class="text-zinc-300">한 줄 소개 (선택)</Label>
+              <Label for="bio" class="text-zinc-500 text-xs text-center md:text-left block">한 줄 소개</Label>
               <Textarea
                 id="bio"
                 v-model="bio"
                 placeholder="자신을 소개해주세요"
-                class="bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500 min-h-[80px]"
+                class="bg-zinc-800/50 border-zinc-700/50 text-white placeholder:text-zinc-600 min-h-[80px] focus:bg-zinc-800 focus:border-emerald-500 transition-colors"
               />
             </div>
 
-            <div class="flex gap-3 pt-2">
-              <Button @click="handleProfileSave" class="bg-emerald-500 hover:bg-emerald-600 text-white">
+            <!-- 4. Save Button -->
+            <div class="flex justify-center md:justify-end pt-2">
+              <Button @click="handleProfileSave" class="bg-emerald-500 hover:bg-emerald-600 text-white px-6">
                 <Save class="w-4 h-4 mr-2" />
-                프로필 편집
+                프로필 저장
               </Button>
-
             </div>
+            
           </div>
         </div>
       </div>
@@ -317,21 +630,46 @@ const getDifficultyColor = (difficulty: string) => {
       <!-- 섹션 2: 뱃지 컬렉션 -->
       <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-8 space-y-6">
         <div class="flex items-center justify-between">
-          <h2 class="text-2xl text-white">뱃지 컬렉션</h2>
-          <div class="text-sm text-zinc-400">
-            획득: {{ badges.filter((b) => b.acquired).length }} / {{ badges.length }}
+          <div class="flex items-center gap-4">
+             <h2 class="text-2xl text-white">뱃지 컬렉션</h2>
+             <span v-if="badges.length > 0" class="text-sm bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">
+                {{ badges.length }}개 획득
+             </span>
           </div>
+          <Button 
+            v-if="currentTitleId"
+            @click="handleUnsetTitle"
+            variant="outline"
+            size="sm"
+            class="text-zinc-400 hover:text-white border-zinc-700 hover:bg-zinc-800"
+          >
+            뱃지 해제
+          </Button>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div v-if="badges.length === 0" class="flex flex-col items-center justify-center py-12 text-zinc-500 space-y-2">
+            <div class="text-4xl">📭</div>
+            <p>아직 표시할 뱃지가 없습니다.</p>
+        </div>
+
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div
             v-for="badge in badges"
             :key="badge.id"
-            class="relative p-5 rounded-xl border-2 transition-all"
-            :class="badge.acquired ? 'bg-zinc-800/50 border-zinc-700' : 'bg-zinc-900/50 border-zinc-800 opacity-50'"
+            class="relative p-5 rounded-xl border-2 transition-all cursor-pointer hover:border-emerald-500/50"
+            :class="[
+                badge.acquired ? 'bg-zinc-800/50' : 'bg-zinc-900/50 border-zinc-800 opacity-50 cursor-not-allowed',
+                String(badge.id) === String(currentTitleId) ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-900/10' : 'border-zinc-700'
+            ]"
+            @click="handleSetTitle(badge)"
           >
             <div v-if="!badge.acquired" class="absolute top-3 right-3">
               <Lock class="w-4 h-4 text-zinc-600" />
+            </div>
+            
+             <!-- Representative Badge Indicator -->
+            <div v-if="String(badge.id) === String(currentTitleId)" class="absolute top-3 left-3">
+               <span class="text-[10px] bg-emerald-500 text-black font-bold px-1.5 py-0.5 rounded">대표</span>
             </div>
 
             <div class="space-y-3">
@@ -346,7 +684,7 @@ const getDifficultyColor = (difficulty: string) => {
                 </p>
               </div>
 
-              <div class="flex justify-center">
+              <div class="flex justify-center" v-if="badge.difficulty">
                 <span class="text-xs px-2 py-1 rounded-full border" :class="getDifficultyColor(badge.difficulty)">
                   {{ badge.difficulty }}
                 </span>
@@ -360,7 +698,7 @@ const getDifficultyColor = (difficulty: string) => {
         </div>
 
         <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
-          <p class="text-zinc-400 text-sm">💡 챌린지를 완료하면 난이도에 따라 다른 등급의 뱃지를 획득할 수 있어요.</p>
+          <p class="text-zinc-400 text-sm">💡 뱃지를 클릭하여 대표 뱃지로 설정할 수 있습니다.</p>
         </div>
       </div>
 
@@ -526,6 +864,44 @@ const getDifficultyColor = (difficulty: string) => {
         </div>
       </div>
     </div>
+
+    <!-- Follows Modal -->
+    <Teleport to="body">
+      <div 
+        v-if="showFollowModal"
+        class="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
+        @click="closeFollowModal"
+      >
+        <div 
+          class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-sm w-full mx-4 flex flex-col max-h-[80vh]"
+          @click.stop
+        >
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white">{{ followModalTitle }}</h3>
+                <button @click="closeFollowModal" class="text-zinc-400 hover:text-white">
+                    <X class="w-5 h-5" />
+                </button>
+            </div>
+            
+            <div v-if="isFollowLoading" class="flex-1 flex justify-center items-center py-10">
+                <div class="text-zinc-400">불러오는 중...</div>
+            </div>
+
+            <div v-else class="flex-1 overflow-y-auto space-y-4 pr-2">
+                 <div v-if="followList.length === 0" class="text-center text-zinc-500 py-8">
+                    {{ followModalType === 'following' ? '팔로우하는 유저가 없습니다.' : '나를 팔로우하는 유저가 없습니다.' }}
+                 </div>
+                 <div v-for="user in followList" :key="user.userId" class="flex items-center gap-3">
+                    <Avatar :src="user.profileImageUrl" :fallback="user.username.charAt(0)" class="w-10 h-10" />
+                    <div class="flex-1 min-w-0">
+                        <div class="text-white font-medium truncate">{{ user.username }}</div>
+                        <div class="text-xs text-zinc-500 truncate">{{ user.introduction || '소개가 없습니다.' }}</div>
+                    </div>
+                 </div>
+            </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Withdrawal Dialog -->
     <Teleport to="body">

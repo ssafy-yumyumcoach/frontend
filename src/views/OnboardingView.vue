@@ -7,6 +7,7 @@ import Input from "@/components/ui/Input.vue";
 import Label from "@/components/ui/Label.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
 import { useOnboardingStore } from "@/stores/onboarding";
+import userApi from "@/api/user";
 
 const router = useRouter();
 const store = useOnboardingStore();
@@ -34,17 +35,17 @@ const goalOptions = [
 
 const activityOptions = [
   {
-    id: "low",
+    id: "LOW",
     label: "낮음",
     description: "하루 대부분 앉아서 생활해요",
   },
   {
-    id: "medium",
+    id: "MODERATE",
     label: "보통",
     description: "가벼운 활동이나 주 1~2회 운동을 해요",
   },
   {
-    id: "high",
+    id: "HIGH",
     label: "높음",
     description: "하루 활동량이 많거나 주 3회 이상 운동해요",
   },
@@ -104,19 +105,61 @@ const prevStep = () => {
   }
 };
 
-const handleSubmit = () => {
-  console.log({
-    height: store.height,
-    weight: store.weight,
-    targetWeight: store.targetWeight,
-    diseases: store.diseases,
-    otherDisease: otherDisease.value,
-    goals: store.goals,
-    otherGoal: otherGoal.value,
-    activityLevel: store.activityLevel,
-  });
-  // 대시보드로 이동
-  router.push("/dashboard");
+const goalMap: Record<string, string> = {
+    'weight-loss': '체중 감량',
+    'maintain': '체중 유지',
+    'muscle-gain': '근육 증가',
+    'disease-management': '질환 관리',
+};
+
+const handleSubmit = async () => {
+  try {
+      // 1. Goal Mapping (Reverse of MyPage logic or just simple mapping?)
+      // MyPage logic: API returns Korean string like "체중 감량".
+      // UI uses IDs: 'weight-loss'.
+      // So we need to send Korean string "체중 감량" if selected 'weight-loss'.
+      // But wait! Providing a string to backend.
+      // MyPageView `handleHealthInfoSave`: `selectedGoal = Object.keys(goalMap).find(...) || found`.
+      // MyPageView `goalMap` was `{'체중 감량': 'weight-loss'}`.
+      // Here in Onboarding, `goalOptions` use `weight-loss` IDs.
+      // So if I select 'weight-loss', I should send '체중 감량'.
+      // Therefore, I need `goalMap` to be `{'weight-loss': '체중 감량'}`.
+      
+      let selectedGoal: string | null = null;
+      // We pick the first selected goal for simplicty as API allows one string currently?
+      // Or if `store.goals` has multiple, we pick one.
+      const foundId = store.goals.find(g => ['weight-loss', 'maintain', 'muscle-gain', 'disease-management'].includes(g));
+      
+      if (foundId) {
+          selectedGoal = goalMap[foundId] || foundId;
+      } else if (store.goals.includes('other')) {
+          selectedGoal = otherGoal.value;
+      }
+
+      const payload = {
+          height: Number(store.height),
+          weight: Number(store.weight),
+          goalWeight: Number(store.targetWeight),
+          activityLevel: store.activityLevel.toUpperCase(), // Ensure uppercase if store has lowercase default
+          hasDiabetes: store.diseases.includes('diabetes'),
+          hasHypertension: store.diseases.includes('hypertension'),
+          hasHyperlipidemia: store.diseases.includes('hyperlipidemia'),
+          otherDisease: store.diseases.includes('other') ? otherDisease.value : null,
+          goal: selectedGoal
+      };
+
+      await userApi.updateMyHealthInfo(payload);
+      
+      // Reset store? Optional.
+      // store.reset();
+
+      // Proceed
+      router.push("/dashboard");
+
+  } catch (e) {
+      console.error("Onboarding saving failed", e);
+      alert("정보 저장에 실패했습니다. 다시 시도해주세요.");
+  }
 };
 
 const handleSkip = () => {

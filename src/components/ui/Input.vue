@@ -4,11 +4,11 @@ import { computed } from "vue";
 
 const props = defineProps<{
   class?: string;
-  modelValue?: string | number;
+  modelValue?: string | number | null;
 }>();
 
 const emit = defineEmits<{
-  (e: "update:modelValue", value: string | number): void;
+  (e: "update:modelValue", value: string | number | null): void;
 }>();
 
 const computedClass = computed(() => {

@@ -48,6 +48,10 @@ const goToDetail = (postId: number) => {
     router.push({ name: 'community-detail', params: { id: postId } });
 };
 
+const goToProfile = (userId: number) => {
+    router.push({ name: 'user-profile', params: { id: userId } });
+};
+
 // --- Create Post Actions ---
 const triggerFileInput = () => {
   fileInput.value?.click();
@@ -156,8 +160,10 @@ const formatTime = (dateStr: string) => {
           <!-- Top Section: Author + Content -->
           <div>
             <div class="flex items-center gap-3 mb-2">
-              <Avatar :src="post.authorProfileImageUrl" :fallback="post.authorUsername?.[0]" class="w-8 h-8" />
-              <div>
+              <div @click.stop="goToProfile(post.authorId)" class="cursor-pointer hover:opacity-80 transition-opacity">
+                <Avatar :src="post.authorProfileImageUrl" :fallback="post.authorUsername?.[0]" class="w-8 h-8" />
+              </div>
+              <div @click.stop="goToProfile(post.authorId)" class="cursor-pointer hover:underline">
                 <div class="text-white text-sm font-medium">{{ post.authorUsername }}</div>
                 <div class="text-[10px] text-zinc-400">{{ formatTime(post.createdAt) }}</div>
               </div>
