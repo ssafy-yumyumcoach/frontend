@@ -5,6 +5,7 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   // State
   const gender = ref<"male" | "female">("male");
   const age = ref<number>(25);
+  const birthDate = ref<string>("");
   const height = ref<number | null>(null);
   const weight = ref<number | null>(null);
   const targetWeight = ref<number | null>(null);
@@ -26,6 +27,10 @@ export const useOnboardingStore = defineStore("onboarding", () => {
 
   function setAge(val: number) {
     age.value = val;
+  }
+
+  function setBirthDate(val: string) {
+    birthDate.value = val;
   }
 
   function setHeight(val: number | null) {
@@ -65,6 +70,7 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   function reset() {
     gender.value = "male";
     age.value = 25;
+    birthDate.value = "";
     height.value = null;
     weight.value = null;
     targetWeight.value = null;
@@ -76,6 +82,7 @@ export const useOnboardingStore = defineStore("onboarding", () => {
   return {
     gender,
     age,
+    birthDate,
     height,
     weight,
     targetWeight,
@@ -85,6 +92,7 @@ export const useOnboardingStore = defineStore("onboarding", () => {
     bmi,
     setGender,
     setAge,
+    setBirthDate,
     setHeight,
     setWeight,
     setTargetWeight,

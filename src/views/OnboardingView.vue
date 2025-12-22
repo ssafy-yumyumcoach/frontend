@@ -67,7 +67,7 @@ const stepTitle = computed(() => {
 const stepDescription = computed(() => {
   switch (currentStep.value) {
     case 1:
-      return "정확한 분석을 위해 키와 몸무게가 필요해요.";
+      return "정확한 분석을 위해 생년월일, 키와 몸무게가 필요해요.";
     case 2:
       return "어떤 건강 관리를 원하시나요?";
     case 3:
@@ -136,18 +136,27 @@ const handleSubmit = async () => {
           selectedGoal = otherGoal.value;
       }
 
-      const payload = {
+      // Ensure activityLevel is uppercase (it's already uppercase in store, but just in case)
+      const activityLevelValue = store.activityLevel.toUpperCase();
+
+      const payload: any = {
           height: Number(store.height),
           weight: Number(store.weight),
           goalWeight: Number(store.targetWeight),
-          activityLevel: store.activityLevel.toUpperCase(), // Ensure uppercase if store has lowercase default
+          activityLevel: activityLevelValue,
           hasDiabetes: store.diseases.includes('diabetes'),
           hasHypertension: store.diseases.includes('hypertension'),
           hasHyperlipidemia: store.diseases.includes('hyperlipidemia'),
-          otherDisease: store.diseases.includes('other') ? otherDisease.value : null,
+          otherDisease: store.diseases.includes('other') ? (otherDisease.value || null) : null,
           goal: selectedGoal
       };
 
+      // Add birthDate if provided
+      if (store.birthDate) {
+          payload.birthDate = store.birthDate;
+      }
+
+      console.log('Onboarding payload:', payload);
       await userApi.updateMyHealthInfo(payload);
       
       // Reset store? Optional.
@@ -156,9 +165,11 @@ const handleSubmit = async () => {
       // Proceed
       router.push("/dashboard");
 
-  } catch (e) {
+  } catch (e: any) {
       console.error("Onboarding saving failed", e);
-      alert("정보 저장에 실패했습니다. 다시 시도해주세요.");
+      const errorMessage = e.response?.data?.message || e.message || "알 수 없는 오류";
+      console.error("Error details:", e.response?.data);
+      alert(`정보 저장에 실패했습니다: ${errorMessage}`);
   }
 };
 
@@ -205,6 +216,17 @@ const handleSkip = () => {
       <div class="space-y-6 min-h-[300px]">
         <!-- Step 1: Basic Info -->
         <div v-if="currentStep === 1" class="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+          <div class="space-y-2">
+            <Label class="text-zinc-300">생년월일</Label>
+            <Input
+              type="date"
+              v-model="store.birthDate"
+              class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
+              :max="new Date().toISOString().split('T')[0]"
+            />
+            <p class="text-xs text-zinc-500">정확한 건강 분석을 위해 필요해요.</p>
+          </div>
+
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label class="text-zinc-300">키</Label>
