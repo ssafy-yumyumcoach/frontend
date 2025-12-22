@@ -5,6 +5,7 @@ import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock 
 import Button from "@/components/ui/Button.vue";
 import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } from "@/api/exercise/index";
 import aiApi, { type MealPlanResponse } from "@/api/ai/index";
+import statsApi from "@/api/stats";
 
 const router = useRouter();
 
@@ -243,6 +244,11 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
     const promises = recordIds.map((id) => exerciseApi.deleteMyExerciseRecord(id));
     await Promise.all(promises);
     await fetchTodayExercises();
+
+    // Trigger AI Exercise Review Generation (Fire and Forget)
+    localStorage.setItem('LAST_EXERCISE_UPDATE_TIME', new Date().toISOString());
+    statsApi.generateExerciseReview({ anchorDate: getTodayDate() }).catch(e => console.warn(e));
+
   } catch (e) {
     console.error("Failed to delete records", e);
     alert("운동 기록 삭제에 실패했습니다.");

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import {
   Chart as ChartJS,
   Title,
@@ -14,124 +14,245 @@ import {
   type ChartOptions,
 } from "chart.js";
 import { Bar } from "vue-chartjs";
+import { Loader2 } from "lucide-vue-next";
 import Select from "@/components/ui/Select.vue";
+import statsApi from "@/api/stats";
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement);
 
-// State
-const selectedWeek = ref("2025. 11. 17 ~ 2025. 11. 23");
-const selectedNutrient = ref("탄수화물");
-const selectedExerciseStat = ref("운동시간");
+// --- Helpers ---
+const formatDateForApi = (d: Date) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-const weekOptions = [
-  { label: "2025. 11. 17 ~ 2025. 11. 23", value: "2025. 11. 17 ~ 2025. 11. 23" },
-  { label: "2025. 11. 10 ~ 2025. 11. 16", value: "2025. 11. 10 ~ 2025. 11. 16" },
-  { label: "2025. 11. 03 ~ 2025. 11. 09", value: "2025. 11. 03 ~ 2025. 11. 09" },
-];
+const formatDateForDisplay = (d: Date) => {
+  return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const getMonday = (d: Date) => {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+  return new Date(date.setDate(diff));
+};
+
+const addDays = (d: Date, days: number) => {
+  const date = new Date(d);
+  date.setDate(date.getDate() + days);
+  return date;
+};
+
+// --- State ---
+// Week Options: Generate last 4 weeks including current week
+const generateWeekOptions = () => {
+    const options = [];
+    const today = new Date();
+    // Start from current week's monday
+    let currentMonday = getMonday(today);
+
+    for (let i = 0; i < 4; i++) {
+        const start = currentMonday;
+        const end = addDays(start, 6);
+        const label = `${formatDateForDisplay(start)} ~ ${formatDateForDisplay(end)}`;
+        const value = formatDateForApi(start); // Use startDate as value
+        options.push({ label, value });
+        
+        // Go to previous week
+        currentMonday = addDays(currentMonday, -7);
+    }
+    return options;
+};
+
+const weekOptions = generateWeekOptions();
+const selectedWeek = ref(weekOptions[0].value); // Default to current week
+
+const selectedNutrient = ref("calories");
+const selectedExerciseStat = ref("durationMinutes");
 
 const nutrientOptions = [
-  { label: "탄수화물", value: "탄수화물" },
-  { label: "단백질", value: "단백질" },
-  { label: "지방", value: "지방" },
-  { label: "칼로리", value: "칼로리" },
+  { label: "탄수화물", value: "carbs" },
+  { label: "단백질", value: "protein" },
+  { label: "지방", value: "fat" },
+  { label: "칼로리", value: "calories" },
 ];
 
 const exerciseStatOptions = [
-  { label: "운동시간", value: "운동시간" },
-  { label: "소모칼로리", value: "소모칼로리" },
+  { label: "운동시간", value: "durationMinutes" },
+  { label: "소모칼로리", value: "calories" },
 ];
 
-// Data
-const weeklyNutritionData = [
-  {
-    day: "월",
-    탄수화물: 280,
-    단백질: 95,
-    지방: 55,
-    칼로리: 1850,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-  {
-    day: "화",
-    탄수화물: 240,
-    단백질: 110,
-    지방: 58,
-    칼로리: 1920,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-  {
-    day: "수",
-    탄수화물: 320,
-    단백질: 85,
-    지방: 62,
-    칼로리: 2100,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-  {
-    day: "목",
-    탄수화물: 260,
-    단백질: 105,
-    지방: 54,
-    칼로리: 1880,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-  {
-    day: "금",
-    탄수화물: 300,
-    단백질: 90,
-    지방: 65,
-    칼로리: 2050,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-  {
-    day: "토",
-    탄수화물: 220,
-    단백질: 115,
-    지방: 52,
-    칼로리: 1800,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-  {
-    day: "일",
-    탄수화물: 270,
-    단백질: 100,
-    지방: 59,
-    칼로리: 1950,
-    권장탄수화물: 250,
-    권장단백질: 120,
-    권장지방: 60,
-    권장칼로리: 2000,
-  },
-];
+// Data State
+const isLoading = ref(false);
+const rawDietStats = ref<any[]>([]);
+const rawExerciseStats = ref<any[]>([]);
+const weekRange = ref({ start: "", end: "" });
+const nutritionReview = ref<any>(null);
+const exerciseReview = ref<any>(null);
 
-const weeklyExerciseData = [
-  { day: "월", 운동시간: 30, 소모칼로리: 250, 목표시간: 35, 목표칼로리: 300 },
-  { day: "화", 운동시간: 0, 소모칼로리: 0, 목표시간: 35, 목표칼로리: 300 },
-  { day: "수", 운동시간: 45, 소모칼로리: 380, 목표시간: 35, 목표칼로리: 300 },
-  { day: "목", 운동시간: 25, 소모칼로리: 200, 목표시간: 35, 목표칼로리: 300 },
-  { day: "금", 운동시간: 0, 소모칼로리: 0, 목표시간: 35, 목표칼로리: 300 },
-  { day: "토", 운동시간: 50, 소모칼로리: 420, 목표시간: 35, 목표칼로리: 300 },
-  { day: "일", 운동시간: 40, 소모칼로리: 320, 목표시간: 35, 목표칼로리: 300 },
-];
+// Data Check Helpers
+const hasDietData = computed(() => {
+    return rawDietStats.value.some(d => Number(d[selectedNutrient.value]) > 0);
+});
+
+const hasExerciseData = computed(() => {
+    return rawExerciseStats.value.some(d => Number(d[selectedExerciseStat.value]) > 0);
+});
+
+// UI Helpers for Review
+const getStatusBadge = (status: string) => {
+    switch (status) {
+        case "LOW":
+            return { text: "부족", class: "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" };
+        case "ADEQUATE":
+            return { text: "적정", class: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" };
+        case "HIGH":
+            return { text: "과다", class: "bg-red-500/20 text-red-500 border-red-500/50" };
+        default:
+            return { text: "-", class: "bg-zinc-800 text-zinc-400 border-zinc-700" };
+    }
+};
+
+const getExerciseStatusBadge = (status: string) => {
+    switch (status) {
+        case "LOW":
+            return { text: "부족", class: "bg-yellow-500/20 text-yellow-500 border-yellow-500/50" };
+        case "ADEQUATE":
+            return { text: "적정", class: "bg-emerald-500/20 text-emerald-500 border-emerald-500/50" };
+        case "HIGH":
+            return { text: "많음", class: "bg-blue-500/20 text-blue-500 border-blue-500/50" };
+        default:
+            return { text: "-", class: "bg-zinc-800 text-zinc-400 border-zinc-700" };
+    }
+};
+
+const getStatusLabel = (key: string) => {
+    const map: Record<string, string> = {
+        calorieStatus: "칼로리",
+        carbohydrateStatus: "탄수화물",
+        proteinStatus: "단백질",
+        fatStatus: "지방",
+    };
+    return map[key] || key;
+};
+
+// --- API Fetch ---
+const fetchStats = async () => {
+    if (!selectedWeek.value) return;
+    isLoading.value = true;
+    try {
+        const [statsRes, reviewRes, exReviewRes] = await Promise.allSettled([
+            statsApi.getWeeklyStats(selectedWeek.value),
+            statsApi.getNutritionReview(selectedWeek.value),
+            statsApi.getExerciseReview(selectedWeek.value)
+        ]);
+
+        // Handle Stats
+        if (statsRes.status === "fulfilled") {
+            const data = statsRes.value.data;
+            rawDietStats.value = data.dietStats || [];
+            rawExerciseStats.value = data.exerciseStats || [];
+            weekRange.value = {
+                start: data.weekStartDate,
+                end: data.weekEndDate
+            };
+        } else {
+             console.error("Failed to fetch stats:", statsRes.reason);
+             rawDietStats.value = [];
+             rawExerciseStats.value = [];
+        }
+
+        // Handle Nutrition Review
+        if (reviewRes.status === "fulfilled") {
+            nutritionReview.value = reviewRes.value.data;
+        } else {
+            console.error("Failed to fetch nutrition review:", reviewRes.reason);
+            nutritionReview.value = null; 
+        }
+
+        // Handle Exercise Review
+        const handleExerciseReviewFetch = async () => {
+             // Polling Logic
+             let attempts = 0;
+             const maxAttempts = 10;
+             const pollInterval = 2000;
+
+             // Helper: Check if review is valid (not stale)
+             const isReviewValid = (review: any) => {
+                 if (!review || !review.evaluated) return false;
+                 
+                 const lastUpdateTimeStr = localStorage.getItem('LAST_EXERCISE_UPDATE_TIME');
+                 if (!lastUpdateTimeStr) return true; // No updates made locally, so existing review is valid
+
+                 const lastUpdateTime = new Date(lastUpdateTimeStr).getTime();
+                 const generatedTime = new Date(review.generatedAt).getTime();
+                 
+                 // If generatedAt is OLDER than last update, it's stale.
+                 // Give a small buffer (e.g., 1 sec) just in case of clock skew, though strict comparison is usually fine.
+                 return generatedTime >= lastUpdateTime;
+             };
+
+             const poll = async () => {
+                try {
+                    const res = await statsApi.getExerciseReview(selectedWeek.value);
+                    if (isReviewValid(res.data)) {
+                        exerciseReview.value = res.data;
+                        return true;
+                    }
+                } catch (e) {
+                    console.warn("Polling exercise review failed:", e);
+                }
+                return false;
+             };
+             
+             // Initial Check
+             // If we have a result AND it counts as valid (newer than last update), use it.
+             if (exReviewRes.status === "fulfilled" && isReviewValid(exReviewRes.value.data)) {
+                 exerciseReview.value = exReviewRes.value.data;
+             } else {
+                 exerciseReview.value = null; // Show loading state because it's either missing or stale
+                 
+                 // Start Polling
+                 console.log("Starting polling for fresh exercise review...");
+                 const interval = setInterval(async () => {
+                     attempts++;
+                     const success = await poll();
+                     if (success || attempts >= maxAttempts) {
+                         clearInterval(interval);
+                         if (success) {
+                             console.log("Fresh exercise review fetched via polling!");
+                             // Optional: Clear timestamp after success? 
+                             // No, better keep it to compare against future changes unless we want to clear it.
+                             // But keeping it is fine as future generations will be even newer.
+                         }
+                         else console.log("Polling timed out.");
+                     }
+                 }, pollInterval);
+             }
+        };
+        
+        handleExerciseReviewFetch();
+
+    } catch (error) {
+        console.error("Unexpected error:", error);
+    } finally {
+        isLoading.value = false;
+    }
+};
+
+// Watch for week change
+watch(selectedWeek, () => {
+    fetchStats();
+});
+
+onMounted(() => {
+    fetchStats();
+});
+
+// --- Charts ---
 
 // Chart Config
 const commonOptions: ChartOptions<"bar"> = {
@@ -172,27 +293,20 @@ const commonOptions: ChartOptions<"bar"> = {
 
 // Nutrition Chart Data
 const nutritionChartData = computed<ChartData<"bar" | "line">>(() => {
-  const nutrient = selectedNutrient.value as keyof (typeof weeklyNutritionData)[0];
-  const recommendedKey = `권장${nutrient}` as keyof (typeof weeklyNutritionData)[0];
+  const nutrientKey = selectedNutrient.value as string;
+  // nutrientOptions value matches the API keys: carbs, protein, fat, calories
+
+  const labels = rawDietStats.value.map(d => d.dayOfWeekKr);
+  const data = rawDietStats.value.map(d => d[nutrientKey]);
 
   return {
-    labels: weeklyNutritionData.map((d) => d.day),
+    labels: labels,
     datasets: [
       {
-        type: "line" as const,
-        label: "권장량",
-        borderColor: "#6b7280",
-        borderWidth: 2,
-        borderDash: [5, 5],
-        pointRadius: 0,
-        data: weeklyNutritionData.map((d) => Number(d[recommendedKey])),
-        order: 1,
-      },
-      {
         type: "bar" as const,
-        label: "실제 섭취",
+        label: nutrientOptions.find(o => o.value === nutrientKey)?.label || nutrientKey,
         backgroundColor: "#10b981",
-        data: weeklyNutritionData.map((d) => Number(d[nutrient])),
+        data: data,
         borderRadius: 4,
         order: 2,
       },
@@ -202,114 +316,169 @@ const nutritionChartData = computed<ChartData<"bar" | "line">>(() => {
 
 // Exercise Chart Data
 const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
-  const stat = selectedExerciseStat.value as keyof (typeof weeklyExerciseData)[0];
-  const goalKey = stat === "운동시간" ? "목표시간" : "목표칼로리";
+  const statKey = selectedExerciseStat.value as string;
+  // exerciseStatOptions value matches API keys: durationMinutes, calories
+
+  const labels = rawExerciseStats.value.map(d => d.dayOfWeekKr);
+  const data = rawExerciseStats.value.map(d => d[statKey]);
 
   return {
-    labels: weeklyExerciseData.map((d) => d.day),
+    labels: labels,
     datasets: [
       {
-        type: "line" as const,
-        label: "일일 목표",
-        borderColor: "#6b7280",
-        borderWidth: 2,
-        borderDash: [5, 5],
-        pointRadius: 0,
-        data: weeklyExerciseData.map((d) => Number(d[goalKey])),
-        order: 1,
-      },
-      {
         type: "bar" as const,
-        label: stat === "운동시간" ? "운동 시간" : "소모 칼로리",
+        label: exerciseStatOptions.find(o => o.value === statKey)?.label || statKey,
         backgroundColor: "#f97316",
-        data: weeklyExerciseData.map((d) => Number(d[stat])),
+        data: data,
         borderRadius: 4,
         order: 2,
       },
     ],
   } as any;
 });
+
 </script>
 
 <template>
-  <div class="space-y-8">
-    <!-- 상단 - 제목 + 주간 선택 -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <h2 class="text-2xl text-white">주간 통계</h2>
-
+  <div class="space-y-6">
+    <!-- 상단 - 주간 선택 (제목 제거 및 우측 정렬) -->
+    <div class="flex justify-end">
       <Select v-model="selectedWeek" :options="weekOptions" class="w-[280px] bg-zinc-900 border-zinc-800 text-white" />
     </div>
 
-    <!-- 상단 요약 카드 2개 (신호등) -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- 영양 균형 -->
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="text-white">영양 균형</h3>
-          <div class="w-4 h-4 rounded-full bg-yellow-500"></div>
-        </div>
-        <p class="text-sm text-zinc-400">단백질과 섬유질 섭취가 약간 부족합니다.</p>
-      </div>
-
-      <!-- 운동량 -->
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-3">
-        <div class="flex items-center justify-between">
-          <h3 class="text-white">운동량</h3>
-          <div class="w-4 h-4 rounded-full bg-emerald-500"></div>
-        </div>
-        <p class="text-sm text-zinc-400">목표 150분 중 120분 완료</p>
-      </div>
+    <!-- 로딩 상태 표시 -->
+    <div v-if="isLoading" class="text-center py-20 text-zinc-500">
+        데이터를 불러오는 중입니다...
     </div>
 
-    <!-- 중단 - 2개 그래프 영역 -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- 왼쪽 - 주간 영양소 섭취 추이 -->
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
-        <div class="flex items-center justify-between">
-          <h3 class="text-xl text-white">주간 영양소 섭취 추이</h3>
-          <Select
-            v-model="selectedNutrient"
-            :options="nutrientOptions"
-            class="w-[140px] h-9 text-sm bg-zinc-800 border-zinc-700 text-white"
-          />
+    <div v-else class="space-y-6">
+        <!-- AI 분석 카드 그리드 (영양 + 운동) -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 0. 주간 영양 AI 분석 -->
+            <div v-if="nutritionReview" class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 h-full">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl text-white flex items-center gap-2">
+                        ✨ 영양 분석
+                    </h3>
+                    <span class="text-xs text-zinc-500" v-if="nutritionReview.generatedAt">
+                        {{ new Date(nutritionReview.generatedAt).toLocaleDateString() }}
+                    </span>
+                </div>
+
+                <!-- 상태 뱃지 그리드 -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div v-for="key in ['calorieStatus', 'carbohydrateStatus', 'proteinStatus', 'fatStatus']" :key="key" 
+                        class="bg-zinc-950 rounded-lg p-2 md:p-3 border border-zinc-800 flex items-center justify-between">
+                        <span class="text-zinc-400 text-xs md:text-sm">{{ getStatusLabel(key) }}</span>
+                        <span 
+                            class="text-xs px-2 py-1 rounded border font-medium"
+                            :class="getStatusBadge(nutritionReview[key]).class"
+                        >
+                            {{ getStatusBadge(nutritionReview[key]).text }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 요약 텍스트 -->
+                <div class="bg-zinc-950/50 rounded-lg p-4 border border-zinc-800/50">
+                    <p class="text-zinc-300 leading-relaxed whitespace-pre-line text-sm">
+                        {{ nutritionReview.summaryText }}
+                    </p>
+                </div>
+            </div>
+            
+            <!-- 0.5 주간 운동 AI 분석 (New) -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 h-full flex flex-col">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl text-white flex items-center gap-2">
+                        💪 운동 분석
+                    </h3>
+                    <span class="text-xs text-zinc-500" v-if="exerciseReview && exerciseReview.generatedAt">
+                        {{ new Date(exerciseReview.generatedAt).toLocaleDateString() }}
+                    </span>
+                </div>
+
+                <!-- Case 1: Data Available -->
+                <template v-if="exerciseReview">
+                     <!-- 상태 뱃지 -->
+                     <div class="bg-zinc-950 rounded-lg p-3 border border-zinc-800 flex items-center justify-between">
+                        <span class="text-zinc-400 text-sm">운동량</span>
+                        <span 
+                            class="text-xs px-2 py-1 rounded border font-medium"
+                            :class="getExerciseStatusBadge(exerciseReview.volumeStatus).class"
+                        >
+                            {{ getExerciseStatusBadge(exerciseReview.volumeStatus).text }}
+                        </span>
+                    </div>
+
+                    <!-- 요약 텍스트 & 추천 -->
+                    <div class="space-y-3 flex-1">
+                         <div class="bg-zinc-950/50 rounded-lg p-4 border border-zinc-800/50">
+                            <p class="text-zinc-300 leading-relaxed whitespace-pre-line text-sm">
+                                {{ exerciseReview.summaryText }}
+                            </p>
+                        </div>
+                        <div v-if="exerciseReview.recommendation" class="bg-emerald-900/10 border border-emerald-900/30 rounded-lg p-4">
+                            <p class="text-emerald-400 text-xs font-bold mb-1">RECOMMENDATION</p>
+                            <p class="text-zinc-300 leading-relaxed text-sm">
+                                {{ exerciseReview.recommendation }}
+                            </p>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Case 2: Loading / Analyzing -->
+                <template v-else>
+                    <div class="flex-1 flex flex-col items-center justify-center space-y-4 py-8">
+                        <Loader2 class="w-8 h-8 text-emerald-500 animate-spin" />
+                        <div class="text-center space-y-1">
+                            <p class="text-zinc-300 font-medium">AI가 운동 기록을 분석하고 있어요</p>
+                            <p class="text-zinc-500 text-sm">잠시만 기다려주세요...</p>
+                        </div>
+                    </div>
+                </template>
+            </div>
         </div>
 
-        <!-- 그래프 -->
-        <div class="w-full h-[400px]">
-          <Bar :data="nutritionChartData" :options="commonOptions" />
+        <!-- 1. 주간 영양소 섭취 추이 (가로 전체) -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
+            <div class="flex items-center justify-between">
+            <h3 class="text-xl text-white">주간 영양소 섭취 추이</h3>
+            <Select
+                v-model="selectedNutrient"
+                :options="nutrientOptions"
+                class="w-[140px] h-9 text-sm bg-zinc-800 border-zinc-700 text-white"
+            />
+            </div>
+
+            <!-- 그래프 -->
+            <div class="w-full h-[400px]">
+              <div v-if="!hasDietData" class="w-full h-full flex items-center justify-center text-zinc-500">
+                데이터가 없습니다.
+              </div>
+              <Bar v-else :data="nutritionChartData" :options="commonOptions" />
+            </div>
         </div>
 
-        <!-- 요약 텍스트 -->
-        <div class="pt-6 border-t border-zinc-800">
-          <p class="text-zinc-300 leading-relaxed">
-            이번 주에는 수요일과 금요일에 {{ selectedNutrient }} 섭취가 권장량보다 높았어요.
-          </p>
-        </div>
-      </div>
+        <!-- 2. 주간 운동 추이 (그 밑에) -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
+            <div class="flex items-center justify-between">
+            <h3 class="text-xl text-white">주간 운동 추이</h3>
+            <Select
+                v-model="selectedExerciseStat"
+                :options="exerciseStatOptions"
+                class="w-[140px] h-9 text-sm bg-zinc-800 border-zinc-700 text-white"
+            />
+            </div>
 
-      <!-- 오른쪽 - 운동 통계 -->
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-5">
-        <div class="flex items-center justify-between">
-          <h3 class="text-xl text-white">주간 운동 추이</h3>
-          <Select
-            v-model="selectedExerciseStat"
-            :options="exerciseStatOptions"
-            class="w-[140px] h-9 text-sm bg-zinc-800 border-zinc-700 text-white"
-          />
+            <!-- 그래프 -->
+            <div class="w-full h-[400px]">
+              <div v-if="!hasExerciseData" class="w-full h-full flex items-center justify-center text-zinc-500">
+                 데이터가 없습니다.
+              </div>
+              <Bar v-else :data="exerciseChartData" :options="commonOptions" />
+            </div>
         </div>
-
-        <!-- 그래프 -->
-        <div class="w-full h-[400px]">
-          <Bar :data="exerciseChartData" :options="commonOptions" />
-        </div>
-
-        <!-- 요약 텍스트 -->
-        <div class="pt-6 border-t border-zinc-800">
-          <p class="text-zinc-300 leading-relaxed">
-            이번 주는 토요일과 수요일에 목표보다 많이 운동했어요. 이번 달 목표 대비 36% 달성 중입니다.
-          </p>
-        </div>
-      </div>
     </div>
   </div>
 </template>

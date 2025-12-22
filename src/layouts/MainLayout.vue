@@ -29,7 +29,7 @@ const menuItems = [
   { id: "dashboard", label: "대시보드", icon: LayoutDashboard, path: "/dashboard" },
   { id: "meal", label: "식단 기록하기", icon: UtensilsCrossed, path: "/meal-register" },
   { id: "exercise", label: "운동 기록하기", icon: Dumbbell, path: "/exercise-register" },
-  { id: "stats", label: "통계", icon: TrendingUp, path: "/stats-analysis" },
+  { id: "stats", label: "주간 통계", icon: TrendingUp, path: "/stats-analysis" },
   { id: "community", label: "커뮤니티", icon: Users, path: "/community" },
   { id: "challenge", label: "챌린지", icon: Trophy, path: "/challenge-list" },
   { id: "mypage", label: "마이페이지", icon: User, path: "/mypage" },
