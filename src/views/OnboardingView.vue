@@ -67,7 +67,7 @@ const stepTitle = computed(() => {
 const stepDescription = computed(() => {
   switch (currentStep.value) {
     case 1:
-      return "정확한 분석을 위해 키와 몸무게가 필요해요.";
+      return "정확한 분석을 위해 생년월일, 키와 몸무게가 필요해요.";
     case 2:
       return "어떤 건강 관리를 원하시나요?";
     case 3:
@@ -114,20 +114,33 @@ const goalMap: Record<string, string> = {
 
 const handleSubmit = async () => {
   try {
-      // 1. Goal Mapping (Reverse of MyPage logic or just simple mapping?)
-      // MyPage logic: API returns Korean string like "체중 감량".
-      // UI uses IDs: 'weight-loss'.
-      // So we need to send Korean string "체중 감량" if selected 'weight-loss'.
-      // But wait! Providing a string to backend.
-      // MyPageView `handleHealthInfoSave`: `selectedGoal = Object.keys(goalMap).find(...) || found`.
-      // MyPageView `goalMap` was `{'체중 감량': 'weight-loss'}`.
-      // Here in Onboarding, `goalOptions` use `weight-loss` IDs.
-      // So if I select 'weight-loss', I should send '체중 감량'.
-      // Therefore, I need `goalMap` to be `{'weight-loss': '체중 감량'}`.
-      
+      // 유효성 검사
+      if (!store.birthDate) {
+          alert("생년월일을 입력해주세요.");
+          return;
+      }
+
+      const heightNum = Number(store.height);
+      const weightNum = Number(store.weight);
+      const targetWeightNum = Number(store.targetWeight);
+
+      if (!store.height || isNaN(heightNum) || heightNum <= 0) {
+          alert("키를 올바르게 입력해주세요.");
+          return;
+      }
+
+      if (!store.weight || isNaN(weightNum) || weightNum <= 0) {
+          alert("현재 몸무게를 올바르게 입력해주세요.");
+          return;
+      }
+
+      if (!store.targetWeight || isNaN(targetWeightNum) || targetWeightNum <= 0) {
+          alert("목표 몸무게를 올바르게 입력해주세요.");
+          return;
+      }
+
+      // 1. Goal Mapping
       let selectedGoal: string | null = null;
-      // We pick the first selected goal for simplicty as API allows one string currently?
-      // Or if `store.goals` has multiple, we pick one.
       const foundId = store.goals.find(g => ['weight-loss', 'maintain', 'muscle-gain', 'disease-management'].includes(g));
       
       if (foundId) {
@@ -136,18 +149,23 @@ const handleSubmit = async () => {
           selectedGoal = otherGoal.value;
       }
 
-      const payload = {
-          height: Number(store.height),
-          weight: Number(store.weight),
-          goalWeight: Number(store.targetWeight),
-          activityLevel: store.activityLevel.toUpperCase(), // Ensure uppercase if store has lowercase default
+      // Ensure activityLevel is uppercase
+      const activityLevelValue = store.activityLevel.toUpperCase();
+
+      const payload: any = {
+          birthDate: store.birthDate,
+          height: heightNum,
+          weight: weightNum,
+          goalWeight: targetWeightNum,
+          activityLevel: activityLevelValue,
           hasDiabetes: store.diseases.includes('diabetes'),
           hasHypertension: store.diseases.includes('hypertension'),
           hasHyperlipidemia: store.diseases.includes('hyperlipidemia'),
-          otherDisease: store.diseases.includes('other') ? otherDisease.value : null,
+          otherDisease: store.diseases.includes('other') ? (otherDisease.value || null) : null,
           goal: selectedGoal
       };
 
+      console.log('Onboarding payload:', payload);
       await userApi.updateMyHealthInfo(payload);
       
       // Reset store? Optional.
@@ -156,9 +174,23 @@ const handleSubmit = async () => {
       // Proceed
       router.push("/dashboard");
 
-  } catch (e) {
+  } catch (e: any) {
       console.error("Onboarding saving failed", e);
-      alert("정보 저장에 실패했습니다. 다시 시도해주세요.");
+      const errorData = e.response?.data;
+      const errorMessage = errorData?.message || e.message || "알 수 없는 오류";
+      console.error("Error details:", errorData);
+      console.error("Full error response:", e.response);
+      
+      // 서버에서 더 자세한 에러 메시지가 있는지 확인
+      let alertMessage = `정보 저장에 실패했습니다: ${errorMessage}`;
+      if (errorData?.errors) {
+          const errorList = Object.entries(errorData.errors)
+              .map(([field, messages]: [string, any]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
+              .join('\n');
+          alertMessage += `\n\n상세 오류:\n${errorList}`;
+      }
+      
+      alert(alertMessage);
   }
 };
 
@@ -205,6 +237,17 @@ const handleSkip = () => {
       <div class="space-y-6 min-h-[300px]">
         <!-- Step 1: Basic Info -->
         <div v-if="currentStep === 1" class="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+          <div class="space-y-2">
+            <Label class="text-zinc-300">생년월일</Label>
+            <Input
+              type="date"
+              v-model="store.birthDate"
+              class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
+              :max="new Date().toISOString().split('T')[0]"
+            />
+            <p class="text-xs text-zinc-500">정확한 건강 분석을 위해 필요해요.</p>
+          </div>
+
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label class="text-zinc-300">키</Label>
