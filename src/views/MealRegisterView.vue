@@ -174,10 +174,13 @@ const handleAddManualFood = () => {
   });
 };
 
-const handleAddCatalogFood = () => {
+const handleAddCatalogFood = async () => {
   if (!selectedCatalogFoodId.value) return;
-  const selected = foodsStore.foodById(Number(selectedCatalogFoodId.value));
-  if (!selected) return;
+  const foodId = Number(selectedCatalogFoodId.value);
+  if (!Number.isFinite(foodId)) return;
+
+  // 상세 조회로 영양정보 확정 (캐시 있으면 즉시 반환)
+  const selected = await foodsStore.fetchFoodDetail(foodId);
 
   foods.value.push({
     id: `catalog-${selected.id}-${Date.now()}`,
