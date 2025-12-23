@@ -31,21 +31,15 @@ export type DietTimeSlot = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
  * - items[].unit: "g"
  */
 export interface CreateMyDietItemRequest {
-  foodId?: number | null; // Long (선택, nullable)
-  foodName?: string; // 직접 입력 시 사용
-  serveCount: number; // Double (NotNull, Positive) - 인분 또는 그램 단위
-  calories?: number; // Double (PositiveOrZero)
-  carbs?: number; // Double (PositiveOrZero)
-  protein?: number; // Double (PositiveOrZero)
-  fat?: number; // Double (PositiveOrZero)
+  foodId: number; // Long (NotNull)
+  serveCount: number; // Double (NotNull, Positive) - 인분 단위 (1 = 1인분, 1.5 = 1.5인분)
   orderIndex: number; // Integer (NotNull, Positive) - 식단 내 표시 순서
 }
 
 export interface CreateMyDietRequest {
-  date: string; // ISO datetime 형식 (e.g. "2025-12-05T08:30:00") - 날짜와 시간 정보 포함
-  timeSlot: DietTimeSlot; // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
+  recordedAt: string; // ISO datetime 형식 (e.g. "2025-12-01T00:00:00")
+  mealType: DietTimeSlot; // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
   items: CreateMyDietItemRequest[];
-  memo?: string;
 }
 
 // 백엔드 응답은 ResponseEntity<Long> 형태로 보임(식단 기록 ID)
@@ -58,21 +52,15 @@ export interface DeleteMyDietResponse {
 }
 
 export interface UpdateMyDietItemRequest {
-  foodId?: number | null; // Long (선택, nullable)
-  foodName?: string; // 직접 입력 시 사용
-  serveCount: number; // Double (NotNull, Positive) - 인분 또는 그램 단위
-  calories?: number; // Double (PositiveOrZero)
-  carbs?: number; // Double (PositiveOrZero)
-  protein?: number; // Double (PositiveOrZero)
-  fat?: number; // Double (PositiveOrZero)
-  orderIndex: number; // Integer (NotNull, Positive) - 식단 내 표시 순서
+  foodId: number;
+  serveCount: number;
+  orderIndex: number;
 }
 
 export interface UpdateMyDietRequest {
-  date: string; // ISO datetime 형식 (e.g. "2025-12-05T08:30:00") - 날짜와 시간 정보 포함
-  timeSlot: DietTimeSlot;
+  recordedAt: string;
+  mealType: DietTimeSlot;
   items: UpdateMyDietItemRequest[];
-  memo?: string;
 }
 
 export interface UpdateMyDietItemResponse {
@@ -147,22 +135,20 @@ export default {
    * 내 식단 한 건 수정
    * PUT /api/me/diets/{dietId}
    */
-  updateMyDiet: (dietId: number, data: UpdateMyDietRequest) => 
+  updateMyDiet: (dietId: number, data: UpdateMyDietRequest) =>
     api.put<UpdateMyDietResponse>(`/me/diets/${dietId}`, data),
 
   /**
    * 특정 날짜의 내 식단 기록 전체 조회
    * GET /api/me/diets?date=YYYY-MM-DD
    */
-  getMyDiets: (date: string) => 
-    api.get<GetMyDietsResponse>(`/me/diets`, { params: { date } }),
+  getMyDiets: (date: string) => api.get<GetMyDietsResponse>(`/me/diets`, { params: { date } }),
 
   /**
    * 내 특정 식단 한 건의 상세 내역 조회
    * GET /api/me/diets/{dietId}
    */
-  getMyDietDetail: (dietId: number) => 
-    api.get<GetMyDietDetailResponse>(`/me/diets/${dietId}`),
+  getMyDietDetail: (dietId: number) => api.get<GetMyDietDetailResponse>(`/me/diets/${dietId}`),
 
   // Foods
   /**
@@ -172,15 +158,15 @@ export default {
    * Authorization: Bearer {accessToken} (axios interceptor에서 자동 첨부)
    */
   getFoods: (params?: FoodListParams) => {
-    console.log('🌐 [dietApi] getFoods 호출, params:', params);
+    console.log("🌐 [dietApi] getFoods 호출, params:", params);
     const result = api.get<FoodListResponse>(`/foods`, { params });
     result.then(
       (response) => {
-        console.log('🌐 [dietApi] getFoods 응답:', response);
-        console.log('🌐 [dietApi] response.data:', response.data);
+        console.log("🌐 [dietApi] getFoods 응답:", response);
+        console.log("🌐 [dietApi] response.data:", response.data);
       },
       (error) => {
-        console.error('🌐 [dietApi] getFoods 에러:', error);
+        console.error("🌐 [dietApi] getFoods 에러:", error);
       }
     );
     return result;

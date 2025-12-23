@@ -10,8 +10,8 @@ import ToggleGroup from "@/components/ui/ToggleGroup.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
-import Textarea from "@/components/ui/Textarea.vue";
 import { type UpdateMyDietItemRequest, type DietTimeSlot } from "@/api/diet";
+import statsApi from "@/api/stats";
 
 const router = useRouter();
 const dateInputRef = ref<HTMLInputElement | null>(null);
@@ -118,43 +118,28 @@ const totalNutrition = computed(() => {
 
 // Actions
 const fetchCatalogFoods = async () => {
-  console.log('🔍 fetchCatalogFoods 호출됨, 검색어:', catalogKeyword.value);
   try {
     const keyword = catalogKeyword.value.trim() || undefined;
-    console.log('📡 API 호출 시작, keyword:', keyword);
-    
-    // 직접 API 호출해서 응답 구조 확인
-    console.log('🔬 [직접 API 호출 테스트]');
-    const testResponse = await foodsStore.fetchFoods({ keyword });
-    console.log('🔬 [직접 API 호출 결과]', testResponse);
-    
-    console.log('✅ API 호출 완료, foodsStore.foods:', foodsStore.foods);
-    console.log('✅ foods 개수:', foodsStore.foods.length);
-    console.log('✅ filteredFoodOptions:', filteredFoodOptions.value);
-    console.log('✅ showAutocomplete:', showAutocomplete.value);
+    await foodsStore.fetchFoods({ keyword });
   } catch (error) {
-    console.error('❌ 음식 검색 실패:', error);
-    console.error('❌ 에러 상세:', error);
+    console.error("Failed to fetch foods:", error);
   }
 };
 
 // 실시간 검색 (debounce)
+// 실시간 검색 (debounce)
 watch(catalogKeyword, (newValue) => {
-  console.log('⌨️ 검색어 변경됨:', newValue);
   if (searchTimeout.value) {
     clearTimeout(searchTimeout.value);
   }
-  
+
   if (newValue.trim().length > 0) {
     // 검색어가 있으면 드롭다운 표시 (검색어 입력 시에는 사라지지 않음)
-    console.log('📝 검색어 있음, 드롭다운 표시');
     showAutocomplete.value = true;
     searchTimeout.value = window.setTimeout(() => {
-      console.log('⏰ Debounce 완료, API 호출 시작');
       fetchCatalogFoods();
     }, 300); // 300ms debounce
   } else {
-    console.log('📝 검색어 없음, 드롭다운 숨김');
     showAutocomplete.value = false;
   }
 });
@@ -165,18 +150,11 @@ const filteredFoodOptions = computed(() => {
     return [];
   }
   // API에서 이미 검색어로 필터링된 결과를 반환하므로, 추가 필터링 없이 그대로 사용
-  const options = foodsStore.foods.map((f) => ({
+  return foodsStore.foods.map((f) => ({
     label: `${f.name} · ${f.calories}kcal`,
     value: String(f.id),
     food: f,
   }));
-  console.log('📋 filteredFoodOptions computed 실행:', {
-    keyword: catalogKeyword.value,
-    foodsCount: foodsStore.foods.length,
-    optionsCount: options.length,
-    showAutocomplete: showAutocomplete.value
-  });
-  return options;
 });
 
 // Input 포커스/입력 핸들러
@@ -202,17 +180,17 @@ const handleSelectFood = async (foodId: string) => {
 // 외부 클릭 시 자동완성 닫기
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
-  
+
   // Input이나 드롭다운 내부 클릭은 무시 (검색어 입력 중에는 드롭다운 유지)
   if (autocompleteContainerRef.value && autocompleteContainerRef.value.contains(target)) {
     return;
   }
-  
+
   // Input에 포커스가 있고 검색어가 있으면 드롭다운 유지
   if (inputRef.value && document.activeElement === inputRef.value && catalogKeyword.value.trim().length > 0) {
     return;
   }
-  
+
   // 실제 외부 클릭 시에만 닫기
   showAutocomplete.value = false;
 };
@@ -278,7 +256,7 @@ const loadDietForEdit = async () => {
           let baseCarbs = 0;
           let baseProtein = 0;
           let baseFat = 0;
-          
+
           // foodId가 있으면 상세 정보 조회하여 기본값 설정
           if (item.foodId) {
             try {
@@ -301,20 +279,20 @@ const loadDietForEdit = async () => {
             baseProtein = 0;
             baseFat = 0;
           }
-          
+
           // amount에 비례하여 계산
           const calculatedCalories = calculateNutrition(baseCalories, amount);
           const calculatedCarbs = calculateNutrition(baseCarbs, amount);
           const calculatedProtein = calculateNutrition(baseProtein, amount);
           const calculatedFat = calculateNutrition(baseFat, amount);
-          
+
           return {
             id: `edit-${item.dietItemId || idx}`,
             foodId: item.foodId || null,
-            name: item.name || '',
+            name: item.name || "",
             checked: true,
             amount: amount,
-            unit: 'g' as const,
+            unit: "g" as const,
             calories: calculatedCalories,
             carbs: calculatedCarbs,
             protein: calculatedProtein,
@@ -346,12 +324,12 @@ onMounted(async () => {
   }
 
   // 외부 클릭 감지 (bubble phase 사용)
-  document.addEventListener('click', handleClickOutside);
+  document.addEventListener("click", handleClickOutside);
 });
 
 onUnmounted(() => {
   // 이벤트 리스너 정리
-  document.removeEventListener('click', handleClickOutside);
+  document.removeEventListener("click", handleClickOutside);
   if (searchTimeout.value) {
     clearTimeout(searchTimeout.value);
   }
@@ -360,7 +338,7 @@ onUnmounted(() => {
 const handlePhotoUpload = () => {
   hasPhoto.value = true;
   uploadedPhotoUrl.value = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c";
-  
+
   // 100g 기준 기본 영양 정보를 저장하고, amount에 비례하여 계산
   foods.value = [
     {
@@ -426,7 +404,7 @@ const handlePhotoDelete = () => {
 // 영양 정보 계산 함수 (100g 기준값을 amount에 비례하여 계산)
 const calculateNutrition = (baseValue: number, amount: number): number => {
   // baseValue는 100g 기준, amount는 실제 그램 수
-  return Math.round((baseValue * amount) / 100 * 10) / 10; // 소수점 첫째자리까지
+  return Math.round(((baseValue * amount) / 100) * 10) / 10; // 소수점 첫째자리까지
 };
 
 // amount 변경 시 영양 정보 자동 계산
@@ -454,7 +432,6 @@ const handleToggleManualInput = (id: string) => {
   if (food) food.manualInput = !food.manualInput;
 };
 
-
 const handleAddCatalogFood = async () => {
   if (!selectedCatalogFoodId.value) return;
   const foodId = Number(selectedCatalogFoodId.value);
@@ -468,10 +445,10 @@ const handleAddCatalogFood = async () => {
   const baseCarbs = selected.carbohydrate;
   const baseProtein = selected.protein;
   const baseFat = selected.fat;
-  
+
   // 초기값은 100g(1인분) 기준
   const initialAmount = 100;
-  
+
   foods.value.push({
     id: `catalog-${selected.id}-${Date.now()}`,
     foodId: selected.id,
@@ -541,8 +518,7 @@ const handleSave = async () => {
   // foodId가 없는 항목이 있으면 저장 불가
   const missingFoodId = selectedItems.filter((f) => f.foodId == null);
   if (missingFoodId.length > 0) {
-    saveErrorMessage.value =
-      "음식 DB에 등록된 음식만 저장할 수 있어요. 음식 검색에서 선택한 음식만 추가해주세요.";
+    saveErrorMessage.value = "음식 DB에 등록된 음식만 저장할 수 있어요. 음식 검색에서 선택한 음식만 추가해주세요.";
     return;
   }
 
@@ -550,67 +526,43 @@ const handleSave = async () => {
     if (isEditMode.value && editDietId.value) {
       // 수정 모드
       const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f, index) => ({
-        foodId: f.foodId || null,
-        foodName: f.name,
-        serveCount: f.amount, // 그램 단위를 그대로 전송 (백엔드에서 인분으로 처리할 수도 있음)
-        calories: f.calories || 0,
-        carbs: f.carbs || 0,
-        protein: f.protein || 0,
-        fat: f.fat || 0,
-        orderIndex: index + 1, // 1부터 시작
+        foodId: f.foodId!,
+        serveCount: f.amount,
+        orderIndex: index + 1,
       }));
 
       // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성 (Spring Boot LocalDateTime 기본 형식)
       const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
-      
+
       const updatePayloadData = {
-        date: dateWithTime, // ISO datetime 형식 (e.g. "2025-12-05T08:30:00")
-        timeSlot: toTimeSlot(selectedMealType.value) as DietTimeSlot,
+        recordedAt: dateWithTime,
+        mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: updatePayload,
-        memo: memo.value.trim() ? memo.value.trim() : undefined,
       };
-      
-      // 디버깅: 실제로 보내는 데이터 확인
-      console.log('📤 [MealRegister] updateMyDiet 요청 데이터:', JSON.stringify(updatePayloadData, null, 2));
-      
+
       await dietStore.updateMyDiet(editDietId.value, updatePayloadData);
     } else {
       // 생성 모드 - API 명세에 맞춘 형식
       // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성 (Spring Boot LocalDateTime 기본 형식)
       const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
-      
+
       const payload = {
-        date: dateWithTime, // ISO datetime 형식 (e.g. "2025-12-05T08:30:00")
-        timeSlot: toTimeSlot(selectedMealType.value) as DietTimeSlot, // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
+        recordedAt: dateWithTime, // ISO datetime 형식 (e.g. "2025-12-05T08:30:00")
+        mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot, // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
         items: selectedItems.map((f, index) => ({
-          foodId: f.foodId || null,
-          foodName: f.name,
-          serveCount: f.amount, // 그램 단위를 그대로 전송 (백엔드에서 인분으로 처리할 수도 있음)
-          calories: f.calories || 0,
-          carbs: f.carbs || 0,
-          protein: f.protein || 0,
-          fat: f.fat || 0,
-          orderIndex: index + 1, // 1부터 시작
+          foodId: f.foodId!, // 위에서 validation 했으므로 단언 가능
+          serveCount: f.amount,
+          orderIndex: index + 1,
         })),
-        memo: memo.value.trim() ? memo.value.trim() : undefined,
       };
-      
-      // 디버깅: 실제로 보내는 데이터 확인
-      console.log('📤 [MealRegister] createMyDiet 요청 데이터:', JSON.stringify(payload, null, 2));
-      console.log('📤 [MealRegister] items 개수:', payload.items.length);
-      console.log('📤 [MealRegister] 각 item:', payload.items.map(item => ({
-        foodId: item.foodId,
-        foodName: item.foodName,
-        serveCount: item.serveCount,
-        orderIndex: item.orderIndex,
-        calories: item.calories,
-        carbs: item.carbs,
-        protein: item.protein,
-        fat: item.fat,
-      })));
-      
+
       await dietStore.createMyDiet(payload);
     }
+
+    // AI 주간 영양 평가 생성 트리거 (비동기, 결과 기다리지 않음)
+    localStorage.setItem("LAST_MEAL_UPDATE_TIME", new Date().toISOString());
+    statsApi.generateNutritionReview({ anchorDate: selectedDate.value }).catch((e) => console.warn(e));
+
     router.push("/dashboard");
   } catch (e: any) {
     saveErrorMessage.value = e?.message || dietStore.errorMessage || "식단 저장 중 오류가 발생했습니다.";
@@ -726,7 +678,7 @@ const handleSave = async () => {
                 @input="handleInputChange"
                 @click.stop
               />
-              
+
               <!-- 자동완성 드롭다운 -->
               <div
                 v-if="showAutocomplete && catalogKeyword.trim().length > 0 && filteredFoodOptions.length > 0"
@@ -741,14 +693,20 @@ const handleSave = async () => {
                 >
                   <div class="text-white text-sm font-medium">{{ option.food.name }}</div>
                   <div class="text-zinc-400 text-xs mt-1">
-                    {{ option.food.calories }}kcal · 탄 {{ option.food.carbohydrate }}g · 단백질 {{ option.food.protein }}g · 지방 {{ option.food.fat }}g
+                    {{ option.food.calories }}kcal · 탄 {{ option.food.carbohydrate }}g · 단백질
+                    {{ option.food.protein }}g · 지방 {{ option.food.fat }}g
                   </div>
                 </div>
               </div>
-              
+
               <!-- 검색 결과 없음 -->
               <div
-                v-if="showAutocomplete && catalogKeyword.trim().length > 0 && !foodsStore.isLoading && filteredFoodOptions.length === 0"
+                v-if="
+                  showAutocomplete &&
+                  catalogKeyword.trim().length > 0 &&
+                  !foodsStore.isLoading &&
+                  filteredFoodOptions.length === 0
+                "
                 class="absolute z-50 w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-lg p-4"
                 @click.stop
               >
@@ -803,10 +761,12 @@ const handleSave = async () => {
                   <!-- 수량 드롭다운 -->
                   <Select
                     :model-value="food.amount.toString()"
-                    @update:model-value="(val) => {
-                      food.amount = Number(val);
-                      updateFoodNutrition(food);
-                    }"
+                    @update:model-value="
+                      (val) => {
+                        food.amount = Number(val);
+                        updateFoodNutrition(food);
+                      }
+                    "
                     :options="servingOptions"
                     class="w-[100px] h-9 text-xs bg-zinc-900 border-zinc-700 text-white"
                   />
@@ -865,7 +825,6 @@ const handleSave = async () => {
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </div>
