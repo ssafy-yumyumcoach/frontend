@@ -21,22 +21,29 @@ export interface FoodListParams {
 export type DietTimeSlot = "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
 
 /**
- * NOTE: 현재 백엔드 CreateDietRecordRequest 검증 기준에 맞춘 요청 타입
- * - recordedAt: NotNull (LocalDateTime)
- * - mealType: NotBlank
- * - items[].serveCount: NotNull (Double)
- * - items[].orderIndex: NotNull (Integer)
+ * API 명세에 맞춘 요청 타입
+ * POST /api/me/diets
+ * - date: YYYY-MM-DD 형식
+ * - timeSlot: BREAKFAST / LUNCH / DINNER / SNACK
+ * - items[].foodId: number (필수)
+ * - items[].name: string
+ * - items[].amount: number
+ * - items[].unit: "g"
  */
 export interface CreateMyDietItemRequest {
-  foodId: number | null;
-  name: string;
-  serveCount: number;
-  orderIndex: number;
+  foodId?: number | null; // Long (선택, nullable)
+  foodName?: string; // 직접 입력 시 사용
+  serveCount: number; // Double (NotNull, Positive) - 인분 또는 그램 단위
+  calories?: number; // Double (PositiveOrZero)
+  carbs?: number; // Double (PositiveOrZero)
+  protein?: number; // Double (PositiveOrZero)
+  fat?: number; // Double (PositiveOrZero)
+  orderIndex: number; // Integer (NotNull, Positive) - 식단 내 표시 순서
 }
 
 export interface CreateMyDietRequest {
-  recordedAt: string; // ISO string (e.g. 2025-12-05T08:30:00)
-  mealType: DietTimeSlot;
+  date: string; // ISO datetime 형식 (e.g. "2025-12-05T08:30:00") - 날짜와 시간 정보 포함
+  timeSlot: DietTimeSlot; // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
   items: CreateMyDietItemRequest[];
   memo?: string;
 }
@@ -51,14 +58,18 @@ export interface DeleteMyDietResponse {
 }
 
 export interface UpdateMyDietItemRequest {
-  foodId: number;
-  name: string;
-  amount: number;
-  unit: string; // "g"
+  foodId?: number | null; // Long (선택, nullable)
+  foodName?: string; // 직접 입력 시 사용
+  serveCount: number; // Double (NotNull, Positive) - 인분 또는 그램 단위
+  calories?: number; // Double (PositiveOrZero)
+  carbs?: number; // Double (PositiveOrZero)
+  protein?: number; // Double (PositiveOrZero)
+  fat?: number; // Double (PositiveOrZero)
+  orderIndex: number; // Integer (NotNull, Positive) - 식단 내 표시 순서
 }
 
 export interface UpdateMyDietRequest {
-  date: string; // YYYY-MM-DD
+  date: string; // ISO datetime 형식 (e.g. "2025-12-05T08:30:00") - 날짜와 시간 정보 포함
   timeSlot: DietTimeSlot;
   items: UpdateMyDietItemRequest[];
   memo?: string;
@@ -160,7 +171,20 @@ export default {
    *
    * Authorization: Bearer {accessToken} (axios interceptor에서 자동 첨부)
    */
-  getFoods: (params?: FoodListParams) => api.get<FoodListResponse>(`/foods`, { params }),
+  getFoods: (params?: FoodListParams) => {
+    console.log('🌐 [dietApi] getFoods 호출, params:', params);
+    const result = api.get<FoodListResponse>(`/foods`, { params });
+    result.then(
+      (response) => {
+        console.log('🌐 [dietApi] getFoods 응답:', response);
+        console.log('🌐 [dietApi] response.data:', response.data);
+      },
+      (error) => {
+        console.error('🌐 [dietApi] getFoods 에러:', error);
+      }
+    );
+    return result;
+  },
 
   /**
    * 음식 상세 조회
