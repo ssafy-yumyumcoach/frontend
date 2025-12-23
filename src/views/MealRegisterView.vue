@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { useRouter } from "vue-router";
+import { ref, computed, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { Upload, Trash2, X } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
@@ -8,16 +8,31 @@ import Checkbox from "@/components/ui/Checkbox.vue";
 import Select from "@/components/ui/Select.vue";
 import ToggleGroup from "@/components/ui/ToggleGroup.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
+import { useFoodsStore } from "@/stores/foods";
+import { useDietStore } from "@/stores/diet";
+import Textarea from "@/components/ui/Textarea.vue";
+import { type UpdateMyDietItemRequest } from "@/api/diet";
 
 const router = useRouter();
+const route = useRoute();
+const foodsStore = useFoodsStore();
+const dietStore = useDietStore();
+
+// Edit mode
+const isEditMode = computed(() => route.query.mode === 'edit' && route.query.dietId);
+const editDietId = computed(() => {
+  const dietId = route.query.dietId;
+  return dietId ? Number(dietId) : null;
+});
 
 // Types
 interface FoodItem {
   id: string;
+  foodId?: number | null;
   name: string;
   checked: boolean;
-  serving: string;
-  servingAmount: number;
+  amount: number;
+  unit: "g";
   calories: number;
   carbs: number;
   protein: number;
@@ -32,6 +47,12 @@ const selectedMealType = ref("lunch");
 const hasPhoto = ref(false);
 const uploadedPhotoUrl = ref("");
 const foods = ref<FoodItem[]>([]);
+const memo = ref("");
+
+// Foods Catalog (GET /api/foods)
+const catalogKeyword = ref("");
+const selectedCatalogFoodId = ref<string>("");
+const saveErrorMessage = ref("");
 
 // Options
 const mealTypeOptions = [
@@ -42,10 +63,11 @@ const mealTypeOptions = [
 ];
 
 const servingOptions = [
-  { label: "0.5 인분", value: "0.5" },
-  { label: "1.0 인분", value: "1" },
-  { label: "1.5 인분", value: "1.5" },
-  { label: "2.0 인분", value: "2" },
+  // 명세에 맞춰 unit=g 기준으로 고정 (추후 단위 확장 가능)
+  { label: "50 g", value: "50" },
+  { label: "100 g", value: "100" },
+  { label: "150 g", value: "150" },
+  { label: "200 g", value: "200" },
 ];
 
 // Computed
@@ -68,17 +90,122 @@ const totalNutrition = computed(() => {
     );
 });
 
+const catalogFoodOptions = computed(() => {
+  return foodsStore.foods.map((f) => ({
+    label: `${f.name} · ${f.calories}kcal`,
+    value: String(f.id),
+  }));
+});
+
 // Actions
+const fetchCatalogFoods = async () => {
+  await foodsStore.fetchFoods({
+    keyword: catalogKeyword.value.trim() || undefined,
+  });
+};
+
+const loadDietForEdit = async () => {
+  if (!isEditMode.value || !editDietId.value) return;
+
+  try {
+    // getMyDietDetail로 상세 정보 가져오기
+    const diet = await dietStore.getMyDietDetail(editDietId.value);
+
+    // 날짜 설정
+    if (diet.date) {
+      selectedDate.value = diet.date;
+    }
+
+    // createdAt에서 시간 추출
+    if (diet.createdAt) {
+      const dateTime = new Date(diet.createdAt);
+      const hours = String(dateTime.getHours()).padStart(2, '0');
+      const minutes = String(dateTime.getMinutes()).padStart(2, '0');
+      selectedTime.value = `${hours}:${minutes}`;
+    } else {
+      // createdAt이 없으면 timeSlot에 따라 기본 시간 설정
+      switch (diet.timeSlot) {
+        case 'BREAKFAST':
+          selectedTime.value = '08:00';
+          break;
+        case 'LUNCH':
+          selectedTime.value = '12:30';
+          break;
+        case 'DINNER':
+          selectedTime.value = '19:00';
+          break;
+        case 'SNACK':
+          selectedTime.value = '15:00';
+          break;
+      }
+    }
+
+    // 식사 타입 설정
+    switch (diet.timeSlot) {
+      case 'BREAKFAST':
+        selectedMealType.value = 'breakfast';
+        break;
+      case 'LUNCH':
+        selectedMealType.value = 'lunch';
+        break;
+      case 'DINNER':
+        selectedMealType.value = 'dinner';
+        break;
+      case 'SNACK':
+        selectedMealType.value = 'snack';
+        break;
+    }
+
+    // 메모 설정
+    if (diet.memo) {
+      memo.value = diet.memo;
+    }
+
+    // 음식 목록 설정
+    if (diet.items && Array.isArray(diet.items)) {
+      foods.value = diet.items.map((item, idx: number) => ({
+        id: `edit-${item.dietItemId || idx}`,
+        foodId: item.foodId || null,
+        name: item.name || '',
+        checked: true,
+        amount: item.amount || 100,
+        unit: 'g' as const,
+        calories: item.calories || 0,
+        carbs: 0, // 상세 정보가 없으면 0
+        protein: 0,
+        fat: 0,
+        manualInput: false,
+      }));
+    }
+  } catch (e: any) {
+    console.error('Failed to load diet for edit', e);
+    saveErrorMessage.value = dietStore.errorMessage || "식단 정보를 불러오는데 실패했습니다.";
+  }
+};
+
+onMounted(async () => {
+  // 최초 진입 시 전체 음식 목록 로드
+  await fetchCatalogFoods().catch(() => {
+    // errorMessage는 store에 저장되므로 여기서는 무시
+  });
+
+  // 수정 모드인 경우 식단 데이터 로드
+  if (isEditMode.value) {
+    await loadDietForEdit();
+  }
+});
+
 const handlePhotoUpload = () => {
   hasPhoto.value = true;
   uploadedPhotoUrl.value = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c";
   foods.value = [
     {
       id: "1",
+      foodId: null,
       name: "밥",
       checked: true,
-      serving: "1인분",
-      servingAmount: 1,
+      amount: 150,
+      unit: "g",
       calories: 250,
       carbs: 45,
       protein: 4,
@@ -87,10 +214,11 @@ const handlePhotoUpload = () => {
     },
     {
       id: "2",
+      foodId: null,
       name: "치킨 샐러드",
       checked: true,
-      serving: "1인분",
-      servingAmount: 1,
+      amount: 200,
+      unit: "g",
       calories: 320,
       carbs: 25,
       protein: 20,
@@ -99,10 +227,11 @@ const handlePhotoUpload = () => {
     },
     {
       id: "3",
+      foodId: null,
       name: "고구마",
       checked: true,
-      serving: "1개",
-      servingAmount: 1,
+      amount: 100,
+      unit: "g",
       calories: 110,
       carbs: 10,
       protein: 6,
@@ -136,10 +265,11 @@ const handleAddManualFood = () => {
   const newId = (foods.value.length + 1).toString();
   foods.value.push({
     id: newId,
+    foodId: null,
     name: "새 음식",
     checked: true,
-    serving: "1인분",
-    servingAmount: 1,
+    amount: 100,
+    unit: "g",
     calories: 0,
     carbs: 0,
     protein: 0,
@@ -148,6 +278,124 @@ const handleAddManualFood = () => {
   });
 };
 
+const handleAddCatalogFood = async () => {
+  if (!selectedCatalogFoodId.value) return;
+  const foodId = Number(selectedCatalogFoodId.value);
+  if (!Number.isFinite(foodId)) return;
+
+  // 상세 조회로 영양정보 확정 (캐시 있으면 즉시 반환)
+  const selected = await foodsStore.fetchFoodDetail(foodId);
+
+  foods.value.push({
+    id: `catalog-${selected.id}-${Date.now()}`,
+    foodId: selected.id,
+    name: selected.name,
+    checked: true,
+    amount: 100,
+    unit: "g",
+    calories: selected.calories,
+    carbs: selected.carbohydrate,
+    protein: selected.protein,
+    fat: selected.fat,
+    manualInput: false,
+  });
+
+  selectedCatalogFoodId.value = "";
+};
+
+const toTimeSlot = (mealType: string) => {
+  switch (mealType) {
+    case "breakfast":
+      return "BREAKFAST";
+    case "lunch":
+      return "LUNCH";
+    case "dinner":
+      return "DINNER";
+    case "snack":
+      return "SNACK";
+    default:
+      return "LUNCH";
+  }
+};
+
+const toRecordedAt = (date: string, time: string) => {
+  // time: "HH:mm" -> "HH:mm:00"
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  return `${date}T${normalizedTime}`;
+};
+
+const handleSave = async () => {
+  saveErrorMessage.value = "";
+
+  const selectedItems = foods.value.filter((f) => f.checked);
+  if (selectedItems.length === 0) {
+    saveErrorMessage.value = "저장할 음식이 없습니다. 최소 1개 이상 선택해주세요.";
+    return;
+  }
+
+  // 백엔드 제약: diet_foods.food_id NOT NULL
+  // - foodId가 없는(수동 입력/사진 인식 더미) 항목은 서버에서 저장 불가
+  // - 가능한 경우, 현재 로드된 foods 목록에서 이름으로 매칭해 foodId를 채웁니다.
+  for (const item of selectedItems) {
+    if (!item.name?.trim()) {
+      saveErrorMessage.value = "음식 이름이 비어있는 항목이 있어요. 이름을 입력해주세요.";
+      return;
+    }
+    if (!Number.isFinite(item.amount) || item.amount <= 0) {
+      saveErrorMessage.value = "수량(amount)은 0보다 커야 합니다.";
+      return;
+    }
+
+    if (item.foodId == null) {
+      const normalized = item.name.trim().toLowerCase();
+      const matched = foodsStore.foods.find((f) => f.name.trim().toLowerCase() === normalized);
+      if (matched) {
+        item.foodId = matched.id;
+      }
+    }
+  }
+
+  const missingFoodId = selectedItems.filter((f) => f.foodId == null);
+  if (missingFoodId.length > 0) {
+    saveErrorMessage.value =
+      "현재 서버 정책상 직접 추가한 음식은 저장할 수 없어요. 음식 DB에서 동일한 이름의 음식을 선택해 추가하거나, 백엔드에서 diet_foods.food_id를 nullable로 변경/별도 저장 방식을 지원해야 합니다.";
+    return;
+  }
+
+  try {
+    if (isEditMode.value && editDietId.value) {
+      // 수정 모드
+      const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f) => ({
+        foodId: f.foodId!,
+        name: f.name,
+        amount: f.amount,
+        unit: 'g',
+      }));
+
+      await dietStore.updateMyDiet(editDietId.value, {
+        date: selectedDate.value,
+        timeSlot: toTimeSlot(selectedMealType.value),
+        items: updatePayload,
+        memo: memo.value.trim() ? memo.value.trim() : undefined,
+      });
+    } else {
+      // 생성 모드
+      await dietStore.createMyDiet({
+        recordedAt: toRecordedAt(selectedDate.value, selectedTime.value),
+        mealType: toTimeSlot(selectedMealType.value),
+        items: selectedItems.map((f, idx) => ({
+          foodId: f.foodId ?? null,
+          name: f.name,
+          serveCount: f.amount,
+          orderIndex: idx + 1,
+        })),
+        memo: memo.value.trim() ? memo.value.trim() : undefined,
+      });
+    }
+    router.push("/dashboard");
+  } catch (e: any) {
+    saveErrorMessage.value = e?.message || dietStore.errorMessage || "식단 저장 중 오류가 발생했습니다.";
+  }
 import dietApi from "@/api/diet";
 import statsApi from "@/api/stats";
 
@@ -269,12 +517,61 @@ const handleSave = async () => {
           <!-- 헤더 -->
           <div class="space-y-3 pb-4 border-b border-zinc-800">
             <div class="flex items-center justify-between">
-              <h3 className="text-lg text-white">이번 식단에 들어간 음식</h3>
-              <span className="text-xs text-zinc-500"> 체크된 음식만 기록에 저장돼요. </span>
+              <h3 class="text-lg text-white">이번 식단에 들어간 음식</h3>
+              <span class="text-xs text-zinc-500"> 체크된 음식만 기록에 저장돼요. </span>
             </div>
-            <p className="text-sm text-zinc-400">
+            <p class="text-sm text-zinc-400">
               AI가 사진에서 인식한 음식에, 직접 추가/수정한 음식도 함께 기록할 수 있어요.
             </p>
+          </div>
+
+          <!-- 음식 DB에서 추가하기 (/api/foods) -->
+          <div class="space-y-3">
+            <div class="flex items-center gap-2">
+              <Input
+                v-model="catalogKeyword"
+                placeholder="음식 검색 (예: 닭가슴살)"
+                class="h-10 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
+                @keyup.enter="fetchCatalogFoods"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                class="h-10 bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700 whitespace-nowrap"
+                :disabled="foodsStore.isLoading"
+                @click="fetchCatalogFoods"
+              >
+                검색
+              </Button>
+            </div>
+
+            <div v-if="foodsStore.errorMessage" class="text-sm text-red-400">
+              {{ foodsStore.errorMessage }}
+            </div>
+
+            <div class="flex items-center gap-2">
+              <Select
+                :model-value="selectedCatalogFoodId"
+                @update:model-value="(val) => (selectedCatalogFoodId = val)"
+                :options="catalogFoodOptions"
+                :disabled="foodsStore.isLoading || catalogFoodOptions.length === 0"
+                placeholder="음식을 선택하세요"
+                class="h-10 bg-zinc-900 border-zinc-800 text-white"
+              />
+              <Button
+                type="button"
+                class="h-10 bg-emerald-500 hover:bg-emerald-600 text-white whitespace-nowrap"
+                :disabled="foodsStore.isLoading || !selectedCatalogFoodId"
+                @click="handleAddCatalogFood"
+              >
+                추가
+              </Button>
+            </div>
+
+            <div v-if="foodsStore.isLoading" class="text-xs text-zinc-500">음식 목록 불러오는 중...</div>
+            <div v-else-if="catalogFoodOptions.length === 0" class="text-xs text-zinc-500">
+              음식 목록이 비어있어요.
+            </div>
           </div>
 
           <!-- 음식 리스트 -->
@@ -314,8 +611,8 @@ const handleSave = async () => {
                 <div class="flex items-center gap-2">
                   <!-- 수량 드롭다운 -->
                   <Select
-                    :model-value="food.servingAmount.toString()"
-                    @update:model-value="(val) => (food.servingAmount = Number(val))"
+                    :model-value="food.amount.toString()"
+                    @update:model-value="(val) => (food.amount = Number(val))"
                     :options="servingOptions"
                     class="w-[100px] h-9 text-xs bg-zinc-900 border-zinc-700 text-white"
                   />
@@ -400,6 +697,15 @@ const handleSave = async () => {
               {{ totalNutrition.fat }}g
             </p>
           </div>
+
+          <div class="space-y-2 pt-2">
+            <p class="text-sm text-zinc-400">메모 (선택)</p>
+            <Textarea v-model="memo" placeholder="운동 전 아침 식사" :rows="3" />
+          </div>
+
+          <p v-if="saveErrorMessage || dietStore.errorMessage" class="text-sm text-red-400">
+            {{ saveErrorMessage || dietStore.errorMessage }}
+          </p>
         </div>
 
         <!-- 저장 버튼 -->
@@ -408,11 +714,20 @@ const handleSave = async () => {
             @click="router.push('/dashboard')"
             variant="outline"
             class="border-zinc-700 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+            :disabled="dietStore.isCreating"
           >
             취소
           </Button>
-          <Button @click="handleSave" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8">
-            이 식단으로 기록하기
+          <Button
+            type="button"
+            @click="handleSave"
+            class="bg-emerald-500 hover:bg-emerald-600 text-white px-8"
+            :disabled="dietStore.isCreating || dietStore.isUpdating"
+          >
+            <span v-if="dietStore.isCreating || dietStore.isUpdating">
+              {{ isEditMode ? '수정 중...' : '저장 중...' }}
+            </span>
+            <span v-else>{{ isEditMode ? '수정하기' : '이 식단으로 기록하기' }}</span>
           </Button>
         </div>
       </div>
