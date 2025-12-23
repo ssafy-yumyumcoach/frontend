@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock, Utensils } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
@@ -8,6 +8,7 @@ import { useDietStore } from "@/stores/diet";
 import aiApi, { type MealPlanResponse } from "@/api/ai/index";
 import statsApi from "@/api/stats";
 import challengeApi, { type ChallengeSummary } from "@/api/challenge";
+import { cn } from "@/lib/utils";
 
 const router = useRouter();
 const dietStore = useDietStore();
@@ -16,17 +17,17 @@ const navigateTo = (path: string) => {
   router.push(path);
 };
 
-// --- Daily Stats (Mock for now, will implement later or keeping static as per plan) ---
-const dailyStats = {
-  intakeCalories: 1350,
+// --- Daily Stats (Reactive for real-time updates) ---
+const dailyStats = reactive({
+  intakeCalories: 0,
   macros: {
-    carbs: 180,
-    protein: 120,
-    fat: 45,
+    carbs: 0,
+    protein: 0,
+    fat: 0,
   },
-  exerciseCalories: 320,
-  exerciseTime: 45,
-};
+  exerciseCalories: 0,
+  exerciseTime: 0,
+});
 
 // --- Unified Timeline Integration ---
 interface UnifiedTimelineItem {
@@ -63,12 +64,41 @@ interface DisplayExerciseRecord extends ExerciseRecordListItem {
 
 const todayExercises = ref<DisplayExerciseRecord[]>([]);
 
+// --- Date Navigation ---
 const getTodayDate = () => {
   const d = new Date();
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const currentDate = ref(getTodayDate());
+const dateInputRef = ref<HTMLInputElement | null>(null);
+
+const isToday = computed(() => currentDate.value === getTodayDate());
+
+const formattedDate = computed(() => {
+  const [year, month, day] = currentDate.value.split("-");
+  return `${year}. ${month}. ${day}.`;
+});
+
+const changeDate = (days: number) => {
+  const date = new Date(currentDate.value);
+  date.setDate(date.getDate() + days);
+  
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  currentDate.value = `${y}-${m}-${d}`;
+};
+
+const openDatePicker = () => {
+  try {
+    dateInputRef.value?.showPicker();
+  } catch (e) {
+    dateInputRef.value?.click();
+  }
 };
 
 // 식단 목록을 저장할 ref (식단별로 표시용)
@@ -86,69 +116,32 @@ const displayedDiets = ref<
   }>
 >([]);
 
-const fetchTodayDiets = async () => {
+const fetchDailyDiets = async (targetDate: string) => {
   try {
-    const today = getTodayDate();
-    console.log("📅 [Dashboard] 오늘 날짜:", today);
+    console.log("📅 [Dashboard] 날짜:", targetDate);
     console.log("📞 [Dashboard] getMyDiets API 호출 시작");
-    const res = await dietStore.getMyDiets(today);
+    const res = await dietStore.getMyDiets(targetDate);
     console.log("✅ [Dashboard] getMyDiets API 응답:", res);
-    console.log("✅ [Dashboard] res 타입:", typeof res);
-    console.log("✅ [Dashboard] res가 배열인가?", Array.isArray(res));
-    console.log("✅ [Dashboard] res.diets:", res.diets);
 
     // API 응답 구조에 따라 유연하게 처리
     let diets: any[] = [];
     if (Array.isArray(res)) {
-      // 백엔드가 직접 배열을 반환하는 경우
-      console.log("✅ [Dashboard] 배열로 직접 반환됨");
       diets = res;
     } else if (res && typeof res === "object" && res.diets && Array.isArray(res.diets)) {
-      // 백엔드가 { date, diets } 형태로 반환하는 경우
-      console.log("✅ [Dashboard] { date, diets } 형태로 반환됨");
       diets = res.diets;
     } else {
-      console.log("⚠️ [Dashboard] 예상치 못한 응답 구조:", res);
       diets = [];
     }
 
-    console.log("📋 [Dashboard] 최종 diets 배열:", diets);
-    console.log("📋 [Dashboard] diets 개수:", diets.length);
-
-    // 각 diet 객체의 상세 정보 로그
-    if (diets.length > 0) {
-      console.log("🔍 [Dashboard] 첫 번째 diet 상세:", JSON.stringify(diets[0], null, 2));
-      console.log("🔍 [Dashboard] 첫 번째 diet의 모든 키:", Object.keys(diets[0]));
-      console.log("🔍 [Dashboard] 첫 번째 diet.items:", diets[0].items);
-      console.log("🔍 [Dashboard] 첫 번째 diet.items 타입:", typeof diets[0].items);
-      console.log("🔍 [Dashboard] 첫 번째 diet.items가 배열인가?", Array.isArray(diets[0].items));
-      console.log("🔍 [Dashboard] 첫 번째 diet.items가 null인가?", diets[0].items === null);
-      console.log("🔍 [Dashboard] 첫 번째 diet.items가 undefined인가?", diets[0].items === undefined);
-      console.log("🔍 [Dashboard] 첫 번째 diet.totalCalories:", diets[0].totalCalories);
-      console.log("🔍 [Dashboard] 첫 번째 diet.timeSlot:", diets[0].timeSlot);
-      console.log("🔍 [Dashboard] 첫 번째 diet.createdAt:", diets[0].createdAt);
-
-      // items 대신 다른 필드명을 사용하는지 확인
-      console.log("🔍 [Dashboard] 첫 번째 diet.dietItems:", diets[0].dietItems);
-      console.log("🔍 [Dashboard] 첫 번째 diet.foods:", diets[0].foods);
-      console.log("🔍 [Dashboard] 첫 번째 diet.foodItems:", diets[0].foodItems);
-    }
-
-    // 날짜 추출 (res가 객체면 res.date, 배열이면 오늘 날짜 사용)
-    const responseDate = typeof res === "object" && !Array.isArray(res) && res.date ? res.date : today;
+    // 날짜 추출 (res가 객체면 res.date, 배열이면 targetDate 사용)
+    const responseDate = typeof res === "object" && !Array.isArray(res) && res.date ? res.date : targetDate;
 
     // Convert to DietRecord format for compatibility
-    // 백엔드 응답 구조: { id, mealType, date (시간 포함), items: null, ... }
     const dietRecords: DietRecord[] = diets.map((diet: any) => {
-      // items가 null이거나 undefined인 경우 빈 배열로 처리
       let items: any[] = [];
-
       if (diet.items !== null && diet.items !== undefined && Array.isArray(diet.items)) {
         items = diet.items;
       }
-
-      // 백엔드 필드명 매핑: id → dietId, mealType → timeSlot
-      // date 필드에 시간 정보가 포함되어 있으므로 우선 사용
       const dateTimeForRecord = diet.date || diet.recordedAt || `${responseDate}T12:00:00`;
       return {
         dietId: diet.id || diet.dietId,
@@ -162,41 +155,23 @@ const fetchTodayDiets = async () => {
       };
     });
 
-    todayDiets.value = dietRecords;
+    todayDiets.value = dietRecords; // Variable name kept for minimal diff, effectively "dailyDiets"
 
     // 식단 목록 표시용 데이터 생성
-    // 백엔드 응답 구조에 맞춰 필드명 매핑: id → dietId, mealType → timeSlot, recordedAt → createdAt
     displayedDiets.value = await Promise.all(
       diets.map(async (diet: any) => {
-        // 백엔드 필드명 매핑
         const dietId = diet.id || diet.dietId;
-        const timeSlot = diet.mealType || diet.timeSlot; // mealType이 실제 필드명
-        // date 필드에 시간 정보가 포함되어 있으므로 우선 사용, 없으면 recordedAt 또는 createdAt 사용
+        const timeSlot = diet.mealType || diet.timeSlot; 
         const dateTime = diet.date || diet.recordedAt || diet.createdAt;
 
-        // items가 null이면 상세 조회로 가져오기
         let items: any[] = [];
         if (diet.items !== null && diet.items !== undefined && Array.isArray(diet.items)) {
           items = diet.items;
         } else if (dietId) {
-          // items가 null이면 상세 조회로 가져오기
           try {
-            console.log(`📞 [Dashboard] dietId ${dietId}의 상세 정보 조회 중...`);
             const detail = await dietStore.getMyDietDetail(dietId);
-            console.log(`✅ [Dashboard] dietId ${dietId} 상세 조회 완료:`, detail);
-            console.log(`✅ [Dashboard] detail.items:`, detail.items);
-            console.log(`✅ [Dashboard] detail.items 타입:`, typeof detail.items);
-            console.log(`✅ [Dashboard] detail.items가 배열인가?`, Array.isArray(detail.items));
-
             if (detail.items && Array.isArray(detail.items) && detail.items.length > 0) {
               items = detail.items;
-              console.log(`✅ [Dashboard] dietId ${dietId}의 items 가져옴:`, items.length, "개");
-              console.log(`✅ [Dashboard] 첫 번째 item:`, items[0]);
-              console.log(`✅ [Dashboard] 첫 번째 item의 모든 키:`, Object.keys(items[0]));
-              console.log(`✅ [Dashboard] 첫 번째 item.name:`, items[0].name);
-              console.log(`✅ [Dashboard] 첫 번째 item.foodName:`, items[0].foodName);
-            } else {
-              console.warn(`⚠️ [Dashboard] dietId ${dietId}의 items가 비어있음 또는 배열이 아님`);
             }
           } catch (e) {
             console.error(`❌ [Dashboard] dietId ${dietId} 상세 조회 실패:`, e);
@@ -205,23 +180,13 @@ const fetchTodayDiets = async () => {
 
         let timeSlotLabel = "";
         switch (timeSlot) {
-          case "BREAKFAST":
-            timeSlotLabel = "아침";
-            break;
-          case "LUNCH":
-            timeSlotLabel = "점심";
-            break;
-          case "DINNER":
-            timeSlotLabel = "저녁";
-            break;
-          case "SNACK":
-            timeSlotLabel = "간식";
-            break;
-          default:
-            timeSlotLabel = timeSlot || "식단";
+          case "BREAKFAST": timeSlotLabel = "아침"; break;
+          case "LUNCH": timeSlotLabel = "점심"; break;
+          case "DINNER": timeSlotLabel = "저녁"; break;
+          case "SNACK": timeSlotLabel = "간식"; break;
+          default: timeSlotLabel = timeSlot || "식단";
         }
 
-        // 시간 추출 (date 필드에 시간 정보가 포함되어 있음)
         let timeStr = "12:00";
         if (dateTime) {
           try {
@@ -230,48 +195,22 @@ const fetchTodayDiets = async () => {
               const hours = String(date.getHours()).padStart(2, "0");
               const minutes = String(date.getMinutes()).padStart(2, "0");
               timeStr = `${hours}:${minutes}`;
-              console.log(`✅ [Dashboard] dietId ${dietId}의 시간 추출: ${dateTime} → ${timeStr}`);
-            } else {
-              throw new Error("Invalid date");
             }
           } catch (e) {
-            console.warn(`⚠️ [Dashboard] dietId ${dietId}의 dateTime 파싱 실패: ${dateTime}`, e);
-            // dateTime 파싱 실패 시 timeSlot에 따라 기본값 사용
-            switch (timeSlot) {
-              case "BREAKFAST":
-                timeStr = "08:00";
-                break;
-              case "LUNCH":
-                timeStr = "12:30";
-                break;
-              case "DINNER":
-                timeStr = "19:00";
-                break;
-              case "SNACK":
-                timeStr = "15:00";
-                break;
-            }
-          }
-        } else {
-          // dateTime이 없으면 timeSlot에 따라 기본값
-          console.warn(`⚠️ [Dashboard] dietId ${dietId}의 dateTime이 없음, timeSlot 기본값 사용`);
-          switch (timeSlot) {
-            case "BREAKFAST":
-              timeStr = "08:00";
-              break;
-            case "LUNCH":
-              timeStr = "12:30";
-              break;
-            case "DINNER":
-              timeStr = "19:00";
-              break;
-            case "SNACK":
-              timeStr = "15:00";
-              break;
+             // Fallback handled below
           }
         }
+        
+        // If still default or failed
+        if (timeStr === "12:00" && !dateTime) {
+             switch (timeSlot) {
+              case "BREAKFAST": timeStr = "08:00"; break;
+              case "LUNCH": timeStr = "12:30"; break;
+              case "DINNER": timeStr = "19:00"; break;
+              case "SNACK": timeStr = "15:00"; break;
+            }
+        }
 
-        // totalCalories가 없으면 items의 calories 합계로 계산
         let totalCal = diet.totalCalories || 0;
         if (totalCal === 0 && items.length > 0) {
           totalCal = items.reduce((sum: number, item: any) => {
@@ -280,15 +219,8 @@ const fetchTodayDiets = async () => {
           }, 0);
         }
 
-        // 영양소 정보 추출 및 총합 계산
         const mappedItems = items.map((item: any) => {
-          // name 필드가 없을 수 있으므로 여러 가능성 확인
           const itemName = item?.name || item?.foodName || item?.food?.name || "";
-          console.log(`🔍 [Dashboard] item 매핑:`, {
-            item,
-            name: itemName,
-            itemKeys: Object.keys(item || {}),
-          });
           return {
             name: itemName,
             amount: item?.amount || 0,
@@ -299,7 +231,6 @@ const fetchTodayDiets = async () => {
           };
         });
 
-        // 총 영양소 계산
         const totalCarbs = mappedItems.reduce((sum: number, item) => sum + (item.carbs || 0), 0);
         const totalProtein = mappedItems.reduce((sum: number, item) => sum + (item.protein || 0), 0);
         const totalFat = mappedItems.reduce((sum: number, item) => sum + (item.fat || 0), 0);
@@ -317,22 +248,11 @@ const fetchTodayDiets = async () => {
         };
       })
     );
-    console.log("✅ [Dashboard] displayedDiets 설정 완료:", displayedDiets.value);
-    console.log("✅ [Dashboard] displayedDiets 개수:", displayedDiets.value.length);
-
-    // Group by TimeSlot (각 식단은 하나의 타임라인 아이템으로 표시)
-    // displayedDiets에서 이미 items를 가져왔으므로 그것을 사용
+    
+    // Group by TimeSlot
     const dietTimelineItems: UnifiedTimelineItem[] = displayedDiets.value.map((diet) => {
-      const desc =
-        diet.items
-          .map((item) => item.name)
-          .filter(Boolean)
-          .join(", ") || "음식 정보 없음";
-
-      // 영양소 정보 포맷팅
-      const nutritionInfo = `탄수화물 ${Math.round(diet.totalCarbs || 0)}g · 단백질 ${Math.round(
-        diet.totalProtein || 0
-      )}g · 지방 ${Math.round(diet.totalFat || 0)}g`;
+      const desc = diet.items.map((item) => item.name).filter(Boolean).join(", ") || "음식 정보 없음";
+      const nutritionInfo = `탄수화물 ${Math.round(diet.totalCarbs || 0)}g · 단백질 ${Math.round(diet.totalProtein || 0)}g · 지방 ${Math.round(diet.totalFat || 0)}g`;
       const subDesc = `${diet.totalCalories || 0} kcal · ${nutritionInfo}`;
 
       return {
@@ -340,7 +260,7 @@ const fetchTodayDiets = async () => {
         id: diet.dietId,
         recordIds: [diet.dietId],
         time: diet.time,
-        title: diet.timeSlotLabel || "식단", // "아침", "점심", "저녁", "간식" 표시
+        title: diet.timeSlotLabel || "식단",
         desc: desc,
         subDesc: subDesc,
         calories: diet.totalCalories || 0,
@@ -349,25 +269,29 @@ const fetchTodayDiets = async () => {
       };
     });
 
-    // Merge with exercise items
     const exerciseTimelineItems = timelineItems.value.filter((item) => item.type === "EXERCISE");
     timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) => a.time.localeCompare(b.time));
 
-    // Update stats (displayedDiets의 totalCalories 사용)
+    // Update stats
     const totalCalories = displayedDiets.value.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
+    const totalCarbs = displayedDiets.value.reduce((sum, d) => sum + (d.totalCarbs || 0), 0);
+    const totalProtein = displayedDiets.value.reduce((sum, d) => sum + (d.totalProtein || 0), 0);
+    const totalFat = displayedDiets.value.reduce((sum, d) => sum + (d.totalFat || 0), 0);
+
     dailyStats.intakeCalories = Math.round(totalCalories);
-    console.log("✅ [Dashboard] 총 칼로리 업데이트:", dailyStats.intakeCalories);
+    dailyStats.macros.carbs = Math.round(totalCarbs);
+    dailyStats.macros.protein = Math.round(totalProtein);
+    dailyStats.macros.fat = Math.round(totalFat);
+
   } catch (e) {
     console.error("❌ [Dashboard] Failed to fetch diet records", e);
-    console.error("❌ [Dashboard] 에러 상세:", e);
     displayedDiets.value = [];
   }
 };
 
-const fetchTodayExercises = async () => {
+const fetchDailyExercises = async (targetDate: string) => {
   try {
-    const today = getTodayDate();
-    const res = await exerciseApi.getMyExerciseRecords(today);
+    const res = await exerciseApi.getMyExerciseRecords(targetDate);
 
     // Enhance details
     const enhancedRecords = await Promise.all(
@@ -386,7 +310,6 @@ const fetchTodayExercises = async () => {
 
     todayExercises.value = enhancedRecords;
 
-    // Group by Time
     const groupedRecords: Record<string, DisplayExerciseRecord[]> = {};
 
     enhancedRecords.forEach((ex) => {
@@ -408,29 +331,23 @@ const fetchTodayExercises = async () => {
     const exerciseTimelineItems: UnifiedTimelineItem[] = Object.keys(groupedRecords).map((timeStr) => {
       const group = groupedRecords[timeStr];
       const firstItem = group[0];
-
-      // Calculate totals
       const totalGroupCalories = group.reduce((sum, r) => sum + (r.calories || 0), 0);
-
-      // Create Description (e.g. "런닝 30분, 스쿼트 20분")
       const desc = group.map((r) => `${r.exerciseName} ${r.durationMinutes}분`).join(", ");
-
       const recordIds = group.map((r) => r.recordId).filter((id): id is number => !!id);
 
       return {
         type: "EXERCISE",
-        id: firstItem.recordId || `group-${timeStr}`, // Note: Using first ID for now. For delete/edit group, we might need all IDs.
+        id: firstItem.recordId || `group-${timeStr}`, 
         recordIds: recordIds,
         time: timeStr,
         title: "운동",
         desc: desc,
-        subDesc: `${totalGroupCalories} kcal 소모`, // User requested "320 kcal 소모" format
+        subDesc: `${totalGroupCalories} kcal 소모`,
         colorClass: "blue",
         icon: Dumbbell,
       };
     });
 
-    // Merge with diet items and Sort
     const dietTimelineItems = timelineItems.value.filter((item) => item.type === "MEAL");
     timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) => {
       return a.time.localeCompare(b.time);
@@ -444,21 +361,28 @@ const fetchTodayExercises = async () => {
     dailyStats.exerciseTime = Math.round(totalTime);
   } catch (e) {
     console.error("Failed to fetch exercise records", e);
-    timelineItems.value = [];
+    // Don't clear timeline here, as it might clear diet items too if not careful, 
+    // but usually fine as we rebuild timeline above.
+    // To be safe, just clear exercise part? Actually safer to leave existing or empty.
   }
 };
+
+watch(currentDate, (newDate) => {
+  fetchDailyDiets(newDate);
+  fetchDailyExercises(newDate);
+});
 
 const handleDeleteDiet = async (dietId: number) => {
   if (!confirm("선택한 식단을 삭제하시겠습니까?")) return;
 
   try {
     await dietStore.deleteMyDiet(dietId);
-    await fetchTodayDiets();
-    await fetchTodayExercises(); // 통계 업데이트를 위해
+    await fetchDailyDiets(currentDate.value);
+    await fetchDailyExercises(currentDate.value);
 
     // AI 주간 영양 평가 생성 트리거 (비동기)
     localStorage.setItem("LAST_MEAL_UPDATE_TIME", new Date().toISOString());
-    statsApi.generateNutritionReview({ anchorDate: getTodayDate() }).catch((e) => console.warn(e));
+    statsApi.generateNutritionReview({ anchorDate: currentDate.value }).catch((e) => console.warn(e));
   } catch (e) {
     console.error("Failed to delete diet", e);
     alert(dietStore.errorMessage || "식단 삭제에 실패했습니다.");
@@ -470,29 +394,27 @@ const isAiLoading = ref(false);
 
 const loadMealPlan = async () => {
   isAiLoading.value = true;
-  const today = getTodayDate();
+  // AI Meal Plan usually takes a date. 
+  // If we want it to react to date change, we should pass currentDate.value.
+  // The original code passed 'today'. Let's stick to 'today' for now unless requested otherwise, 
+  // as "Today's AI Recommendation" implies today.
+  const today = getTodayDate(); 
 
   try {
-    // 1. Try to fetch existing plan
     const res = await aiApi.getMealPlan(today);
 
     if (res.data && res.data.generated) {
       aiMealPlan.value = res.data;
     } else {
-      // 2. If generated=false (or empty), generate new plan
       const genRes = await aiApi.generateMealPlan({ targetDate: today });
       aiMealPlan.value = genRes.data;
     }
   } catch (e: any) {
-    // 백엔드 API가 아직 구현되지 않은 경우 404 에러를 조용히 처리
     if (e.response && e.response.status === 404) {
-      // AI meal plan 기능이 아직 준비되지 않았으므로 조용히 무시
-      // 콘솔 로그 제거하여 불필요한 에러 메시지 방지
       aiMealPlan.value = null;
     } else {
-      // 404가 아닌 다른 에러는 개발 환경에서만 로그 출력
       if (import.meta.env.DEV) {
-        console.warn("AI meal plan API 에러 (기능 미구현 가능성):", e);
+        console.warn("AI meal plan API 에러:", e);
       }
       aiMealPlan.value = null;
     }
@@ -502,8 +424,8 @@ const loadMealPlan = async () => {
 };
 
 onMounted(() => {
-  fetchTodayDiets();
-  fetchTodayExercises();
+  fetchDailyDiets(currentDate.value);
+  fetchDailyExercises(currentDate.value);
   loadMealPlan();
   fetchMyChallenges();
 });
@@ -518,14 +440,9 @@ const fetchMyChallenges = async () => {
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const currentMonth = `${year}-${month}`;
 
-    // Fetch current month (and maybe next if needed, but for "Participating" usually they are active now)
-    // Actually, if a challenge started last month and continues, it might show up in "current month" list if the API supports spanning?
-    // Assuming getChallenges returns challenges active in that month.
     const res = await challengeApi.getChallenges(currentMonth);
-
     const todayStr = getTodayDate();
 
-    // Filter: Joined AND Started (Exclude Pre-reg)
     challenges.value = res.data.challenges.filter((c) => c.isJoined && c.startDate <= todayStr);
   } catch (e) {
     console.error("Failed to fetch challenges", e);
@@ -533,7 +450,6 @@ const fetchMyChallenges = async () => {
 };
 
 const activeChallenges = computed(() => {
-  // Map to Dashboard UI format
   return challenges.value.map((c) => {
     const today = new Date();
     const endDate = new Date(c.endDate);
@@ -553,7 +469,6 @@ const activeChallenges = computed(() => {
 });
 
 const currentChallengeIndex = ref(0);
-
 const currentChallenge = computed(() => activeChallenges.value[currentChallengeIndex.value]);
 
 const prevChallenge = () => {
@@ -571,19 +486,19 @@ const nextChallenge = () => {
     currentChallengeIndex.value = 0;
   }
 };
+
 const handleDeleteExercise = async (recordIds?: number[]) => {
   if (!recordIds || recordIds.length === 0) return;
-
   if (!confirm("선택한 운동 기록을 모두 삭제하시겠습니까?")) return;
 
   try {
     const promises = recordIds.map((id) => exerciseApi.deleteMyExerciseRecord(id));
     await Promise.all(promises);
-    await fetchTodayExercises();
+    await fetchDailyExercises(currentDate.value);
 
     // Trigger AI Exercise Review Generation (Fire and Forget)
     localStorage.setItem("LAST_EXERCISE_UPDATE_TIME", new Date().toISOString());
-    statsApi.generateExerciseReview({ anchorDate: getTodayDate() }).catch((e) => console.warn(e));
+    statsApi.generateExerciseReview({ anchorDate: currentDate.value }).catch((e) => console.warn(e));
   } catch (e) {
     console.error("Failed to delete records", e);
     alert("운동 기록 삭제에 실패했습니다.");
@@ -600,9 +515,9 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         <h2 class="text-xl text-white leading-none">오늘의 요약</h2>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-[1fr]">
         <!-- 1. 섭취 칼로리 -->
-        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">섭취 칼로리</div>
           <div class="text-2xl text-white font-bold">
             {{ dailyStats.intakeCalories }} <span class="text-base text-zinc-500 font-normal">kcal</span>
@@ -610,7 +525,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         </div>
 
         <!-- 2. 섭취 영양소 -->
-        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">섭취 영양소</div>
           <div class="flex flex-col items-end gap-1">
             <div class="text-2xl text-white font-bold">
@@ -624,7 +539,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         </div>
 
         <!-- 3. 운동 소모 -->
-        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">운동 소모</div>
           <div class="text-2xl text-white font-bold">
             {{ dailyStats.exerciseCalories }} <span class="text-base text-zinc-500 font-normal">kcal</span>
@@ -632,7 +547,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         </div>
 
         <!-- 4. 운동 시간 -->
-        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">운동 시간</div>
           <div class="text-2xl text-white font-bold">
             {{ dailyStats.exerciseTime }} <span class="text-base text-zinc-500 font-normal">min</span>
@@ -647,7 +562,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
       <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 h-full flex flex-col">
         <div class="flex items-center gap-2 h-8">
           <Sparkles class="w-5 h-5 text-emerald-500" />
-          <h2 class="text-xl text-white leading-none">AI 추천 식단 계획</h2>
+          <h2 class="text-xl text-white leading-none">오늘의 AI 추천 식단</h2>
         </div>
 
         <div v-if="isAiLoading" class="flex-1 flex items-center justify-center text-zinc-500">
@@ -765,13 +680,50 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
       </div>
     </div>
 
-    <!-- 하단 영역 - 오늘의 루틴 타임라인 -->
+    <!-- 하단 영역 - 루틴 타임라인 -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-6">
-      <div class="flex items-center justify-between">
+      <div class="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div class="flex items-center gap-2 h-8">
           <Clock class="w-5 h-5 text-zinc-400" />
-          <h2 class="text-xl text-white leading-none">오늘의 루틴 타임라인</h2>
+          <h2 class="text-xl text-white leading-none">루틴 타임라인</h2>
         </div>
+
+        <!-- 날짜 네비게이션 (중앙 정렬) -->
+        <div class="flex items-center justify-center md:absolute md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2">
+          <button 
+            @click="changeDate(-1)"
+            class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white transition-colors"
+          >
+            <ChevronLeft class="w-5 h-5" />
+          </button>
+          
+          <div class="relative mx-3">
+            <button 
+              @click="openDatePicker"
+              class="text-white font-medium hover:text-emerald-400 transition-colors flex items-center gap-2"
+            >
+              {{ formattedDate }}
+            </button>
+            <input
+              ref="dateInputRef"
+              type="date"
+              v-model="currentDate"
+              class="absolute inset-0 opacity-0 pointer-events-none"
+            />
+          </div>
+
+          <button 
+            @click="changeDate(1)"
+            :disabled="isToday"
+            :class="cn(
+              'p-1 rounded transition-colors',
+              isToday ? 'text-zinc-600 cursor-not-allowed' : 'text-zinc-400 hover:bg-zinc-700 hover:text-white'
+            )"
+          >
+            <ChevronRight class="w-5 h-5" />
+          </button>
+        </div>
+
         <div class="flex gap-3">
           <Button @click="navigateTo('/meal-register')" class="bg-emerald-500 hover:bg-emerald-600 text-white">
             식단 추가하기

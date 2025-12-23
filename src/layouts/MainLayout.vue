@@ -70,7 +70,7 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
     <!-- 사이드바 - Desktop -->
     <aside class="hidden lg:flex lg:flex-col lg:w-64 bg-zinc-900 border-r border-zinc-800">
         <!-- 로고 -->
-      <div class="p-6 border-b border-zinc-800">
+      <div class="p-6 border-b border-zinc-800 cursor-pointer" @click="router.push('/dashboard')">
         <div class="flex items-center gap-3">
           <Utensils class="w-7 h-7 text-emerald-500" />
           <span class="text-2xl text-white">냠냠코치</span>
@@ -112,7 +112,7 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
       <aside class="w-64 h-full flex flex-col bg-zinc-900 border-r border-zinc-800" @click.stop>
         <!-- 로고 -->
         <div class="p-6 border-b border-zinc-800 flex items-center justify-between">
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-3 cursor-pointer" @click="router.push('/dashboard')">
             <Utensils class="w-7 h-7 text-emerald-500" />
             <span class="text-xl text-white">냠냠코치</span>
           </div>
@@ -170,12 +170,17 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
           <!-- 우측 -->
           <div class="flex items-center gap-6">
             <span class="text-zinc-400 hidden sm:block">{{ formattedDate }}</span>
-            <div class="flex items-center gap-3" v-if="authStore.user">
+            <div 
+              class="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity" 
+              v-if="authStore.user"
+              @click="router.push('/mypage')"
+            >
               <Avatar class="w-9 h-9" :fallback="authStore.user.username.slice(0, 1)" class-name="bg-emerald-500 text-white" />
               <span class="text-white hidden sm:block">{{ authStore.user.username }}</span>
             </div>
           </div>
         </div>
+
       </header>
 
       <!-- 메인 콘텐츠 -->

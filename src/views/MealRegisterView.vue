@@ -59,13 +59,29 @@ interface FoodItem {
   baseCarbs: number; // 100g 기준 기본 탄수화물
   baseProtein: number; // 100g 기준 기본 단백질
   baseFat: number; // 100g 기준 기본 지방
-  manualInput: boolean;
+
 }
 
 // State
 const selectedDate = ref(new Date().toISOString().split("T")[0]);
-const selectedTime = ref("12:30");
-const selectedMealType = ref("lunch");
+const selectedTime = ref(new Date().toTimeString().slice(0, 5));
+
+const getMealTypeFromTime = (time: string) => {
+  const hour = parseInt(time.split(":")[0], 10);
+  if (hour >= 5 && hour < 11) return "breakfast";
+  if (hour >= 11 && hour < 16) return "lunch";
+  if (hour >= 16 && hour < 22) return "dinner";
+  return "snack";
+};
+
+const selectedMealType = ref(getMealTypeFromTime(selectedTime.value));
+
+// 사용자가 시간을 변경하면 끼니 종류도 자동으로 추천 (수정 모드가 아닐 때만)
+watch(selectedTime, (newTime) => {
+  if (!isEditMode.value) {
+    selectedMealType.value = getMealTypeFromTime(newTime);
+  }
+});
 const hasPhoto = ref(false);
 const uploadedPhotoUrl = ref("");
 const foods = ref<FoodItem[]>([]);
@@ -256,6 +272,10 @@ const loadDietForEdit = async () => {
           let baseCarbs = 0;
           let baseProtein = 0;
           let baseFat = 0;
+          
+          // 음식 이름 초기화 (fallback 처리)
+          // 백엔드 응답에 따라 item.name 또는 item.foodName에 값이 있을 수 있음
+          let foodName = item.name || (item as any).foodName || "";
 
           // foodId가 있으면 상세 정보 조회하여 기본값 설정
           if (item.foodId) {
@@ -265,6 +285,9 @@ const loadDietForEdit = async () => {
               baseCarbs = foodDetail.carbohydrate;
               baseProtein = foodDetail.protein;
               baseFat = foodDetail.fat;
+              
+              // 최신 음식 이름으로 업데이트 (DB 기준)
+              foodName = foodDetail.name;
             } catch (e) {
               // 조회 실패 시 저장된 calories를 100g 기준으로 가정
               baseCalories = item.calories || 0;
@@ -289,7 +312,7 @@ const loadDietForEdit = async () => {
           return {
             id: `edit-${item.dietItemId || idx}`,
             foodId: item.foodId || null,
-            name: item.name || "",
+            name: foodName,
             checked: true,
             amount: amount,
             unit: "g" as const,
@@ -301,7 +324,6 @@ const loadDietForEdit = async () => {
             baseCarbs: baseCarbs,
             baseProtein: baseProtein,
             baseFat: baseFat,
-            manualInput: false,
           };
         })
       );
@@ -356,7 +378,7 @@ const handlePhotoUpload = () => {
       carbs: 45,
       protein: 4,
       fat: 1,
-      manualInput: false,
+
     },
     {
       id: "2",
@@ -373,7 +395,7 @@ const handlePhotoUpload = () => {
       carbs: 25,
       protein: 20,
       fat: 15,
-      manualInput: false,
+
     },
     {
       id: "3",
@@ -390,7 +412,7 @@ const handlePhotoUpload = () => {
       carbs: 10,
       protein: 6,
       fat: 4,
-      manualInput: false,
+
     },
   ];
 };
@@ -409,13 +431,11 @@ const calculateNutrition = (baseValue: number, amount: number): number => {
 
 // amount 변경 시 영양 정보 자동 계산
 const updateFoodNutrition = (food: FoodItem) => {
-  if (!food.manualInput) {
-    // 수동 입력이 아닌 경우에만 자동 계산
-    food.calories = calculateNutrition(food.baseCalories, food.amount);
-    food.carbs = calculateNutrition(food.baseCarbs, food.amount);
-    food.protein = calculateNutrition(food.baseProtein, food.amount);
-    food.fat = calculateNutrition(food.baseFat, food.amount);
-  }
+  // 수동 입력 제거로 인해 항상 자동 계산
+  food.calories = calculateNutrition(food.baseCalories, food.amount);
+  food.carbs = calculateNutrition(food.baseCarbs, food.amount);
+  food.protein = calculateNutrition(food.baseProtein, food.amount);
+  food.fat = calculateNutrition(food.baseFat, food.amount);
 };
 
 const handleToggleFood = (id: string) => {
@@ -427,10 +447,7 @@ const handleDeleteFood = (id: string) => {
   foods.value = foods.value.filter((f) => f.id !== id);
 };
 
-const handleToggleManualInput = (id: string) => {
-  const food = foods.value.find((f) => f.id === id);
-  if (food) food.manualInput = !food.manualInput;
-};
+
 
 const handleAddCatalogFood = async () => {
   if (!selectedCatalogFoodId.value) return;
@@ -464,7 +481,6 @@ const handleAddCatalogFood = async () => {
     baseCarbs: baseCarbs,
     baseProtein: baseProtein,
     baseFat: baseFat,
-    manualInput: false,
   });
 
   selectedCatalogFoodId.value = "";
@@ -527,7 +543,7 @@ const handleSave = async () => {
       // 수정 모드
       const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f, index) => ({
         foodId: f.foodId!,
-        serveCount: f.amount,
+        serveCount: f.amount / 100, // 인분 단위로 변환 (100g = 1인분)
         orderIndex: index + 1,
       }));
 
@@ -551,7 +567,7 @@ const handleSave = async () => {
         mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot, // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
         items: selectedItems.map((f, index) => ({
           foodId: f.foodId!, // 위에서 validation 했으므로 단언 가능
-          serveCount: f.amount,
+          serveCount: f.amount / 100, // 인분 단위로 변환 (100g = 1인분)
           orderIndex: index + 1,
         })),
       };
@@ -739,22 +755,9 @@ const handleSave = async () => {
                     @update:checked="() => handleToggleFood(food.id)"
                   />
 
-                  <Input
-                    v-if="food.manualInput"
-                    v-model="food.name"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm flex-1 min-w-0"
-                    placeholder="음식 이름"
-                  />
-                  <label v-else :for="`food-${food.id}`" class="text-white cursor-pointer flex-1">
+                  <label :for="`food-${food.id}`" class="text-white cursor-pointer flex-1">
                     {{ food.name }}
                   </label>
-
-                  <span
-                    v-if="food.manualInput && !food.name"
-                    class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded whitespace-nowrap"
-                  >
-                    수동 입력
-                  </span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -777,51 +780,9 @@ const handleSave = async () => {
                 </div>
               </div>
 
-              <!-- 영양 정보 요약 (수동 입력 모드가 아닐 때만) -->
-              <div v-if="!food.manualInput" class="text-sm text-zinc-400">
+              <!-- 영양 정보 요약 -->
+              <div class="text-sm text-zinc-400">
                 {{ food.calories }} kcal · 탄 {{ food.carbs }}g · 단백질 {{ food.protein }}g · 지방 {{ food.fat }}g
-              </div>
-
-              <!-- 수동 입력 모드일 때: 입력 필드 -->
-              <div v-if="food.manualInput" class="grid grid-cols-2 gap-2 pt-1">
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">열량 (kcal)</label>
-                  <Input
-                    type="number"
-                    v-model="food.calories"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">탄수화물 (g)</label>
-                  <Input
-                    type="number"
-                    v-model="food.carbs"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">단백질 (g)</label>
-                  <Input
-                    type="number"
-                    v-model="food.protein"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">지방 (g)</label>
-                  <Input type="number" v-model="food.fat" class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm" />
-                </div>
-              </div>
-
-              <!-- 하단: 영양 정보 직접 입력 버튼 -->
-              <div class="flex justify-end pt-1">
-                <button
-                  @click="handleToggleManualInput(food.id)"
-                  class="text-xs text-zinc-500 hover:text-white transition-colors"
-                >
-                  {{ food.manualInput ? "자동 입력으로 돌아가기" : "영양 정보 직접 입력하기" }}
-                </button>
               </div>
             </div>
           </div>
