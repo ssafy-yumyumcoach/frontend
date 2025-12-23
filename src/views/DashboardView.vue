@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock } from "lucide-vue-next";
+import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock, Utensils } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } from "@/api/exercise/index";
+import dietApi from "@/api/diet";
+import { useDietStore } from "@/stores/diet";
 
 const router = useRouter();
+const dietStore = useDietStore();
 
 const navigateTo = (path: string) => {
   router.push(path);
@@ -39,6 +42,17 @@ interface UnifiedTimelineItem {
 
 const timelineItems = ref<UnifiedTimelineItem[]>([]);
 
+// --- Daily Diet Records Integration ---
+interface DietRecord {
+  dietId: number;
+  recordedAt: string;
+  mealType: string;
+  items: Array<{ name: string; serveCount: number }>;
+  totalCalories?: number;
+}
+
+const todayDiets = ref<DietRecord[]>([]);
+
 // --- Daily Exercise Records Integration ---
 interface DisplayExerciseRecord extends ExerciseRecordListItem {
   calories?: number;
@@ -53,6 +67,75 @@ const getTodayDate = () => {
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const fetchTodayDiets = async () => {
+  try {
+    const today = getTodayDate();
+    const res = await dietApi.getDailyDiet(today);
+    
+    // 응답 구조에 따라 조정 필요 (예상: res.data 또는 res.data.diets)
+    const diets = Array.isArray(res.data) ? res.data : (res.data?.diets || []);
+    todayDiets.value = diets;
+
+    // Group by Time
+    const groupedDiets: Record<string, DietRecord[]> = {};
+
+    diets.forEach((diet: DietRecord) => {
+      let timeStr = "00:00";
+      if (diet.recordedAt && diet.recordedAt.includes("T")) {
+        const parts = diet.recordedAt.split("T");
+        if (parts.length > 1) {
+          timeStr = parts[1].substring(0, 5); // HH:MM
+        }
+      }
+
+      if (!groupedDiets[timeStr]) {
+        groupedDiets[timeStr] = [];
+      }
+      groupedDiets[timeStr].push(diet);
+    });
+
+    // Convert Groups to TimelineItems
+    const dietTimelineItems: UnifiedTimelineItem[] = Object.keys(groupedDiets).map((timeStr) => {
+      const group = groupedDiets[timeStr];
+      const firstItem = group[0];
+
+      // Calculate totals
+      const totalGroupCalories = group.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
+
+      // Create Description (e.g. "밥, 닭가슴살, 샐러드")
+      const allItems = group.flatMap((d) => d.items.map((item) => item.name));
+      const desc = [...new Set(allItems)].join(", ");
+
+      const dietIds = group.map((d) => d.dietId);
+
+      return {
+        type: "MEAL",
+        id: firstItem.dietId,
+        recordIds: dietIds,
+        time: timeStr,
+        title: "식단",
+        desc: desc,
+        subDesc: `${totalGroupCalories} kcal 섭취`,
+        calories: totalGroupCalories,
+        colorClass: "emerald",
+        icon: Utensils,
+      };
+    });
+
+    // Merge with exercise items
+    const exerciseTimelineItems = timelineItems.value.filter((item) => item.type === "EXERCISE");
+    timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) =>
+      a.time.localeCompare(b.time)
+    );
+
+    // Update stats
+    const totalCalories = diets.reduce((sum: number, d: DietRecord) => sum + (d.totalCalories || 0), 0);
+    dailyStats.intakeCalories = Math.round(totalCalories);
+  } catch (e) {
+    console.error("Failed to fetch diet records", e);
+  }
 };
 
 const fetchTodayExercises = async () => {
@@ -121,9 +204,9 @@ const fetchTodayExercises = async () => {
       };
     });
 
-    // Merge and Sort
-    timelineItems.value = [...exerciseTimelineItems].sort((a, b) => {
-      // Removed dummyMeals
+    // Merge with diet items and Sort
+    const dietTimelineItems = timelineItems.value.filter((item) => item.type === "MEAL");
+    timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) => {
       return a.time.localeCompare(b.time);
     });
 
@@ -139,7 +222,21 @@ const fetchTodayExercises = async () => {
   }
 };
 
+const handleDeleteDiet = async (dietId: number) => {
+  if (!confirm("선택한 식단을 삭제하시겠습니까?")) return;
+
+  try {
+    await dietStore.deleteMyDiet(dietId);
+    await fetchTodayDiets();
+    await fetchTodayExercises(); // 통계 업데이트를 위해
+  } catch (e) {
+    console.error("Failed to delete diet", e);
+    alert(dietStore.errorMessage || "식단 삭제에 실패했습니다.");
+  }
+};
+
 onMounted(() => {
+  fetchTodayDiets();
   fetchTodayExercises();
 });
 
@@ -442,6 +539,14 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
                       class="text-sm text-zinc-400 hover:text-red-400 transition-colors"
                     >
                       삭제
+                    </button>
+                    <button
+                      v-if="item.type === 'MEAL' && typeof item.id === 'number'"
+                      @click="handleDeleteDiet(item.id)"
+                      :disabled="dietStore.isDeleting"
+                      class="text-sm text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-50"
+                    >
+                      {{ dietStore.isDeleting ? '삭제 중...' : '삭제' }}
                     </button>
                   </div>
                 </div>
