@@ -169,12 +169,57 @@ const fetchStats = async () => {
     }
 
     // Handle Nutrition Review
-    if (reviewRes.status === "fulfilled") {
-      nutritionReview.value = reviewRes.value.data;
-    } else {
-      console.error("Failed to fetch nutrition review:", reviewRes.reason);
-      nutritionReview.value = null;
-    }
+    const handleNutritionReviewFetch = async () => {
+      // Polling Logic
+      let attempts = 0;
+      const maxAttempts = 10;
+      const pollInterval = 2000;
+
+      const isNutritionReviewValid = (review: any) => {
+        if (!review || !review.evaluated) return false;
+
+        const lastUpdateTimeStr = localStorage.getItem("LAST_MEAL_UPDATE_TIME");
+        if (!lastUpdateTimeStr) return true;
+
+        const lastUpdateTime = new Date(lastUpdateTimeStr).getTime();
+        const generatedTime = new Date(review.generatedAt).getTime();
+
+        // If generatedAt is OLDER than last update, it's stale.
+        return generatedTime >= lastUpdateTime;
+      };
+
+      const poll = async () => {
+        try {
+          const res = await statsApi.getNutritionReview(selectedWeek.value);
+          if (isNutritionReviewValid(res.data)) {
+            nutritionReview.value = res.data;
+            return true;
+          }
+        } catch (e) {
+          console.warn("Polling nutrition review failed:", e);
+        }
+        return false;
+      };
+
+      // Initial Check
+      if (reviewRes.status === "fulfilled" && isNutritionReviewValid(reviewRes.value.data)) {
+        nutritionReview.value = reviewRes.value.data;
+      } else {
+        nutritionReview.value = null; // Show loading state
+
+        console.log("Starting polling for fresh nutrition review...");
+        const interval = setInterval(async () => {
+          attempts++;
+          const success = await poll();
+          if (success || attempts >= maxAttempts) {
+            clearInterval(interval);
+            if (success) {
+              console.log("Fresh nutrition review fetched via polling!");
+            } else console.log("Nutrition Polling timed out.");
+          }
+        }, pollInterval);
+      }
+    };
 
     // Handle Exercise Review
     const handleExerciseReviewFetch = async () => {
@@ -194,7 +239,6 @@ const fetchStats = async () => {
         const generatedTime = new Date(review.generatedAt).getTime();
 
         // If generatedAt is OLDER than last update, it's stale.
-        // Give a small buffer (e.g., 1 sec) just in case of clock skew, though strict comparison is usually fine.
         return generatedTime >= lastUpdateTime;
       };
 
@@ -227,15 +271,13 @@ const fetchStats = async () => {
             clearInterval(interval);
             if (success) {
               console.log("Fresh exercise review fetched via polling!");
-              // Optional: Clear timestamp after success?
-              // No, better keep it to compare against future changes unless we want to clear it.
-              // But keeping it is fine as future generations will be even newer.
             } else console.log("Polling timed out.");
           }
         }, pollInterval);
       }
     };
 
+    handleNutritionReviewFetch();
     handleExerciseReviewFetch();
   } catch (error) {
     console.error("Unexpected error:", error);
@@ -353,37 +395,51 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
       <!-- AI 분석 카드 그리드 (영양 + 운동) -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- 0. 주간 영양 AI 분석 -->
-        <div v-if="nutritionReview" class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 h-full">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4 h-full flex flex-col">
           <div class="flex items-center justify-between">
             <h3 class="text-xl text-white flex items-center gap-2">✨ 영양 분석</h3>
-            <span class="text-xs text-zinc-500" v-if="nutritionReview.generatedAt">
+            <span class="text-xs text-zinc-500" v-if="nutritionReview && nutritionReview.generatedAt">
               {{ new Date(nutritionReview.generatedAt).toLocaleDateString() }}
             </span>
           </div>
 
-          <!-- 상태 뱃지 그리드 -->
-          <div class="grid grid-cols-2 gap-2">
-            <div
-              v-for="key in ['calorieStatus', 'carbohydrateStatus', 'proteinStatus', 'fatStatus']"
-              :key="key"
-              class="bg-zinc-950 rounded-lg p-2 md:p-3 border border-zinc-800 flex items-center justify-between"
-            >
-              <span class="text-zinc-400 text-xs md:text-sm">{{ getStatusLabel(key) }}</span>
-              <span
-                class="text-xs px-2 py-1 rounded border font-medium"
-                :class="getStatusBadge(nutritionReview[key]).class"
+          <!-- Case 1: Data Available -->
+          <template v-if="nutritionReview">
+            <!-- 상태 뱃지 그리드 -->
+            <div class="grid grid-cols-2 gap-2">
+              <div
+                v-for="key in ['calorieStatus', 'carbohydrateStatus', 'proteinStatus', 'fatStatus']"
+                :key="key"
+                class="bg-zinc-950 rounded-lg p-2 md:p-3 border border-zinc-800 flex items-center justify-between"
               >
-                {{ getStatusBadge(nutritionReview[key]).text }}
-              </span>
+                <span class="text-zinc-400 text-xs md:text-sm">{{ getStatusLabel(key) }}</span>
+                <span
+                  class="text-xs px-2 py-1 rounded border font-medium"
+                  :class="getStatusBadge(nutritionReview[key]).class"
+                >
+                  {{ getStatusBadge(nutritionReview[key]).text }}
+                </span>
+              </div>
             </div>
-          </div>
 
-          <!-- 요약 텍스트 -->
-          <div class="bg-zinc-950/50 rounded-lg p-4 border border-zinc-800/50">
-            <p class="text-zinc-300 leading-relaxed whitespace-pre-line text-sm">
-              {{ nutritionReview.summaryText }}
-            </p>
-          </div>
+            <!-- 요약 텍스트 -->
+            <div class="bg-zinc-950/50 rounded-lg p-4 border border-zinc-800/50 flex-1">
+              <p class="text-zinc-300 leading-relaxed whitespace-pre-line text-sm">
+                {{ nutritionReview.summaryText }}
+              </p>
+            </div>
+          </template>
+
+          <!-- Case 2: Loading / Analyzing -->
+          <template v-else>
+            <div class="flex-1 flex flex-col items-center justify-center space-y-4 py-8">
+              <Loader2 class="w-8 h-8 text-emerald-500 animate-spin" />
+              <div class="text-center space-y-1">
+                <p class="text-zinc-300 font-medium">AI가 영양 섭취를 분석하고 있어요</p>
+                <p class="text-zinc-500 text-sm">잠시만 기다려주세요...</p>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- 0.5 주간 운동 AI 분석 (New) -->
