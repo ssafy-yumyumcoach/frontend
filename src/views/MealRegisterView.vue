@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { Upload, Trash2, X } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
@@ -11,7 +11,7 @@ import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
 import Textarea from "@/components/ui/Textarea.vue";
-import { type UpdateMyDietItemRequest } from "@/api/diet";
+import { type UpdateMyDietItemRequest, type DietTimeSlot } from "@/api/diet";
 
 const router = useRouter();
 const route = useRoute();
@@ -31,12 +31,16 @@ interface FoodItem {
   foodId?: number | null;
   name: string;
   checked: boolean;
-  amount: number;
+  amount: number; // 그램 단위 (50, 100, 150, 200)
   unit: "g";
-  calories: number;
-  carbs: number;
-  protein: number;
-  fat: number;
+  calories: number; // 계산된 칼로리 (amount에 비례)
+  carbs: number; // 계산된 탄수화물 (amount에 비례)
+  protein: number; // 계산된 단백질 (amount에 비례)
+  fat: number; // 계산된 지방 (amount에 비례)
+  baseCalories: number; // 100g 기준 기본 칼로리
+  baseCarbs: number; // 100g 기준 기본 탄수화물
+  baseProtein: number; // 100g 기준 기본 단백질
+  baseFat: number; // 100g 기준 기본 지방
   manualInput: boolean;
 }
 
@@ -53,6 +57,10 @@ const memo = ref("");
 const catalogKeyword = ref("");
 const selectedCatalogFoodId = ref<string>("");
 const saveErrorMessage = ref("");
+const showAutocomplete = ref(false);
+const searchTimeout = ref<number | null>(null);
+const autocompleteContainerRef = ref<HTMLElement | null>(null);
+const inputRef = ref<HTMLInputElement | null>(null);
 
 // Options
 const mealTypeOptions = [
@@ -63,11 +71,12 @@ const mealTypeOptions = [
 ];
 
 const servingOptions = [
-  // 명세에 맞춰 unit=g 기준으로 고정 (추후 단위 확장 가능)
-  { label: "50 g", value: "50" },
-  { label: "100 g", value: "100" },
-  { label: "150 g", value: "150" },
-  { label: "200 g", value: "200" },
+  // 인분 단위로 표시 (내부 값은 그램 단위로 저장하여 백엔드 호환성 유지)
+  // 1인분 = 100g 기준
+  { label: "0.5인분", value: "50" },
+  { label: "1인분", value: "100" },
+  { label: "1.5인분", value: "150" },
+  { label: "2인분", value: "200" },
 ];
 
 // Computed
@@ -90,18 +99,105 @@ const totalNutrition = computed(() => {
     );
 });
 
-const catalogFoodOptions = computed(() => {
-  return foodsStore.foods.map((f) => ({
-    label: `${f.name} · ${f.calories}kcal`,
-    value: String(f.id),
-  }));
-});
-
 // Actions
 const fetchCatalogFoods = async () => {
-  await foodsStore.fetchFoods({
-    keyword: catalogKeyword.value.trim() || undefined,
+  console.log('🔍 fetchCatalogFoods 호출됨, 검색어:', catalogKeyword.value);
+  try {
+    const keyword = catalogKeyword.value.trim() || undefined;
+    console.log('📡 API 호출 시작, keyword:', keyword);
+    
+    // 직접 API 호출해서 응답 구조 확인
+    console.log('🔬 [직접 API 호출 테스트]');
+    const testResponse = await foodsStore.fetchFoods({ keyword });
+    console.log('🔬 [직접 API 호출 결과]', testResponse);
+    
+    console.log('✅ API 호출 완료, foodsStore.foods:', foodsStore.foods);
+    console.log('✅ foods 개수:', foodsStore.foods.length);
+    console.log('✅ filteredFoodOptions:', filteredFoodOptions.value);
+    console.log('✅ showAutocomplete:', showAutocomplete.value);
+  } catch (error) {
+    console.error('❌ 음식 검색 실패:', error);
+    console.error('❌ 에러 상세:', error);
+  }
+};
+
+// 실시간 검색 (debounce)
+watch(catalogKeyword, (newValue) => {
+  console.log('⌨️ 검색어 변경됨:', newValue);
+  if (searchTimeout.value) {
+    clearTimeout(searchTimeout.value);
+  }
+  
+  if (newValue.trim().length > 0) {
+    // 검색어가 있으면 드롭다운 표시 (검색어 입력 시에는 사라지지 않음)
+    console.log('📝 검색어 있음, 드롭다운 표시');
+    showAutocomplete.value = true;
+    searchTimeout.value = window.setTimeout(() => {
+      console.log('⏰ Debounce 완료, API 호출 시작');
+      fetchCatalogFoods();
+    }, 300); // 300ms debounce
+  } else {
+    console.log('📝 검색어 없음, 드롭다운 숨김');
+    showAutocomplete.value = false;
+  }
+});
+
+// 검색 결과 필터링 (API에서 이미 검색어로 필터링된 결과를 사용)
+const filteredFoodOptions = computed(() => {
+  if (!catalogKeyword.value.trim()) {
+    return [];
+  }
+  // API에서 이미 검색어로 필터링된 결과를 반환하므로, 추가 필터링 없이 그대로 사용
+  const options = foodsStore.foods.map((f) => ({
+    label: `${f.name} · ${f.calories}kcal`,
+    value: String(f.id),
+    food: f,
+  }));
+  console.log('📋 filteredFoodOptions computed 실행:', {
+    keyword: catalogKeyword.value,
+    foodsCount: foodsStore.foods.length,
+    optionsCount: options.length,
+    showAutocomplete: showAutocomplete.value
   });
+  return options;
+});
+
+// Input 포커스/입력 핸들러
+const handleInputFocus = () => {
+  if (catalogKeyword.value.trim().length > 0) {
+    showAutocomplete.value = true;
+  }
+};
+
+const handleInputChange = () => {
+  // 검색어 입력 시 드롭다운 유지 (변경 없음)
+};
+
+// 자동완성에서 음식 선택
+const handleSelectFood = async (foodId: string) => {
+  selectedCatalogFoodId.value = foodId;
+  catalogKeyword.value = "";
+  showAutocomplete.value = false;
+  await handleAddCatalogFood();
+  selectedCatalogFoodId.value = "";
+};
+
+// 외부 클릭 시 자동완성 닫기
+const handleClickOutside = (event: MouseEvent) => {
+  const target = event.target as HTMLElement;
+  
+  // Input이나 드롭다운 내부 클릭은 무시 (검색어 입력 중에는 드롭다운 유지)
+  if (autocompleteContainerRef.value && autocompleteContainerRef.value.contains(target)) {
+    return;
+  }
+  
+  // Input에 포커스가 있고 검색어가 있으면 드롭다운 유지
+  if (inputRef.value && document.activeElement === inputRef.value && catalogKeyword.value.trim().length > 0) {
+    return;
+  }
+  
+  // 실제 외부 클릭 시에만 닫기
+  showAutocomplete.value = false;
 };
 
 const loadDietForEdit = async () => {
@@ -163,19 +259,62 @@ const loadDietForEdit = async () => {
 
     // 음식 목록 설정
     if (diet.items && Array.isArray(diet.items)) {
-      foods.value = diet.items.map((item, idx: number) => ({
-        id: `edit-${item.dietItemId || idx}`,
-        foodId: item.foodId || null,
-        name: item.name || '',
-        checked: true,
-        amount: item.amount || 100,
-        unit: 'g' as const,
-        calories: item.calories || 0,
-        carbs: 0, // 상세 정보가 없으면 0
-        protein: 0,
-        fat: 0,
-        manualInput: false,
-      }));
+      foods.value = await Promise.all(
+        diet.items.map(async (item, idx: number) => {
+          const amount = item.amount || 100;
+          let baseCalories = 0;
+          let baseCarbs = 0;
+          let baseProtein = 0;
+          let baseFat = 0;
+          
+          // foodId가 있으면 상세 정보 조회하여 기본값 설정
+          if (item.foodId) {
+            try {
+              const foodDetail = await foodsStore.fetchFoodDetail(item.foodId);
+              baseCalories = foodDetail.calories;
+              baseCarbs = foodDetail.carbohydrate;
+              baseProtein = foodDetail.protein;
+              baseFat = foodDetail.fat;
+            } catch (e) {
+              // 조회 실패 시 저장된 calories를 100g 기준으로 가정
+              baseCalories = item.calories || 0;
+              baseCarbs = 0;
+              baseProtein = 0;
+              baseFat = 0;
+            }
+          } else {
+            // foodId가 없으면 저장된 calories를 100g 기준으로 가정
+            baseCalories = item.calories || 0;
+            baseCarbs = 0;
+            baseProtein = 0;
+            baseFat = 0;
+          }
+          
+          // amount에 비례하여 계산
+          const calculatedCalories = calculateNutrition(baseCalories, amount);
+          const calculatedCarbs = calculateNutrition(baseCarbs, amount);
+          const calculatedProtein = calculateNutrition(baseProtein, amount);
+          const calculatedFat = calculateNutrition(baseFat, amount);
+          
+          return {
+            id: `edit-${item.dietItemId || idx}`,
+            foodId: item.foodId || null,
+            name: item.name || '',
+            checked: true,
+            amount: amount,
+            unit: 'g' as const,
+            calories: calculatedCalories,
+            carbs: calculatedCarbs,
+            protein: calculatedProtein,
+            fat: calculatedFat,
+            baseCalories: baseCalories,
+            baseCarbs: baseCarbs,
+            baseProtein: baseProtein,
+            baseFat: baseFat,
+            manualInput: false,
+          };
+        })
+      );
     }
   } catch (e: any) {
     console.error('Failed to load diet for edit', e);
@@ -193,11 +332,24 @@ onMounted(async () => {
   if (isEditMode.value) {
     await loadDietForEdit();
   }
+
+  // 외부 클릭 감지 (bubble phase 사용)
+  document.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  // 이벤트 리스너 정리
+  document.removeEventListener('click', handleClickOutside);
+  if (searchTimeout.value) {
+    clearTimeout(searchTimeout.value);
+  }
 });
 
 const handlePhotoUpload = () => {
   hasPhoto.value = true;
   uploadedPhotoUrl.value = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c";
+  
+  // 100g 기준 기본 영양 정보를 저장하고, amount에 비례하여 계산
   foods.value = [
     {
       id: "1",
@@ -206,7 +358,11 @@ const handlePhotoUpload = () => {
       checked: true,
       amount: 150,
       unit: "g",
-      calories: 250,
+      baseCalories: 167, // 100g 기준 (250 * 100 / 150)
+      baseCarbs: 30, // 100g 기준 (45 * 100 / 150)
+      baseProtein: 2.7, // 100g 기준 (4 * 100 / 150)
+      baseFat: 0.7, // 100g 기준 (1 * 100 / 150)
+      calories: 250, // 150g 기준 계산값
       carbs: 45,
       protein: 4,
       fat: 1,
@@ -219,7 +375,11 @@ const handlePhotoUpload = () => {
       checked: true,
       amount: 200,
       unit: "g",
-      calories: 320,
+      baseCalories: 160, // 100g 기준 (320 * 100 / 200)
+      baseCarbs: 12.5, // 100g 기준 (25 * 100 / 200)
+      baseProtein: 10, // 100g 기준 (20 * 100 / 200)
+      baseFat: 7.5, // 100g 기준 (15 * 100 / 200)
+      calories: 320, // 200g 기준 계산값
       carbs: 25,
       protein: 20,
       fat: 15,
@@ -232,7 +392,11 @@ const handlePhotoUpload = () => {
       checked: true,
       amount: 100,
       unit: "g",
-      calories: 110,
+      baseCalories: 110, // 100g 기준
+      baseCarbs: 10, // 100g 기준
+      baseProtein: 6, // 100g 기준
+      baseFat: 4, // 100g 기준
+      calories: 110, // 100g 기준 계산값
       carbs: 10,
       protein: 6,
       fat: 4,
@@ -245,6 +409,23 @@ const handlePhotoDelete = () => {
   hasPhoto.value = false;
   uploadedPhotoUrl.value = "";
   foods.value = [];
+};
+
+// 영양 정보 계산 함수 (100g 기준값을 amount에 비례하여 계산)
+const calculateNutrition = (baseValue: number, amount: number): number => {
+  // baseValue는 100g 기준, amount는 실제 그램 수
+  return Math.round((baseValue * amount) / 100 * 10) / 10; // 소수점 첫째자리까지
+};
+
+// amount 변경 시 영양 정보 자동 계산
+const updateFoodNutrition = (food: FoodItem) => {
+  if (!food.manualInput) {
+    // 수동 입력이 아닌 경우에만 자동 계산
+    food.calories = calculateNutrition(food.baseCalories, food.amount);
+    food.carbs = calculateNutrition(food.baseCarbs, food.amount);
+    food.protein = calculateNutrition(food.baseProtein, food.amount);
+    food.fat = calculateNutrition(food.baseFat, food.amount);
+  }
 };
 
 const handleToggleFood = (id: string) => {
@@ -261,22 +442,6 @@ const handleToggleManualInput = (id: string) => {
   if (food) food.manualInput = !food.manualInput;
 };
 
-const handleAddManualFood = () => {
-  const newId = (foods.value.length + 1).toString();
-  foods.value.push({
-    id: newId,
-    foodId: null,
-    name: "새 음식",
-    checked: true,
-    amount: 100,
-    unit: "g",
-    calories: 0,
-    carbs: 0,
-    protein: 0,
-    fat: 0,
-    manualInput: true,
-  });
-};
 
 const handleAddCatalogFood = async () => {
   if (!selectedCatalogFoodId.value) return;
@@ -286,17 +451,30 @@ const handleAddCatalogFood = async () => {
   // 상세 조회로 영양정보 확정 (캐시 있으면 즉시 반환)
   const selected = await foodsStore.fetchFoodDetail(foodId);
 
+  // 100g 기준 기본 영양 정보 저장
+  const baseCalories = selected.calories;
+  const baseCarbs = selected.carbohydrate;
+  const baseProtein = selected.protein;
+  const baseFat = selected.fat;
+  
+  // 초기값은 100g(1인분) 기준
+  const initialAmount = 100;
+  
   foods.value.push({
     id: `catalog-${selected.id}-${Date.now()}`,
     foodId: selected.id,
     name: selected.name,
     checked: true,
-    amount: 100,
+    amount: initialAmount,
     unit: "g",
-    calories: selected.calories,
-    carbs: selected.carbohydrate,
-    protein: selected.protein,
-    fat: selected.fat,
+    calories: baseCalories, // 100g 기준이므로 그대로
+    carbs: baseCarbs,
+    protein: baseProtein,
+    fat: baseFat,
+    baseCalories: baseCalories,
+    baseCarbs: baseCarbs,
+    baseProtein: baseProtein,
+    baseFat: baseFat,
     manualInput: false,
   });
 
@@ -318,12 +496,6 @@ const toTimeSlot = (mealType: string) => {
   }
 };
 
-const toRecordedAt = (date: string, time: string) => {
-  // time: "HH:mm" -> "HH:mm:00"
-  const normalizedTime = time.length === 5 ? `${time}:00` : time;
-  return `${date}T${normalizedTime}`;
-};
-
 const handleSave = async () => {
   saveErrorMessage.value = "";
 
@@ -333,9 +505,7 @@ const handleSave = async () => {
     return;
   }
 
-  // 백엔드 제약: diet_foods.food_id NOT NULL
-  // - foodId가 없는(수동 입력/사진 인식 더미) 항목은 서버에서 저장 불가
-  // - 가능한 경우, 현재 로드된 foods 목록에서 이름으로 매칭해 foodId를 채웁니다.
+  // foodId는 필수입니다. 음식 DB에서 이름으로 매칭해 foodId를 채웁니다.
   for (const item of selectedItems) {
     if (!item.name?.trim()) {
       saveErrorMessage.value = "음식 이름이 비어있는 항목이 있어요. 이름을 입력해주세요.";
@@ -346,6 +516,7 @@ const handleSave = async () => {
       return;
     }
 
+    // foodId가 없으면 음식 DB에서 이름으로 매칭 시도
     if (item.foodId == null) {
       const normalized = item.name.trim().toLowerCase();
       const matched = foodsStore.foods.find((f) => f.name.trim().toLowerCase() === normalized);
@@ -355,42 +526,78 @@ const handleSave = async () => {
     }
   }
 
+  // foodId가 없는 항목이 있으면 저장 불가
   const missingFoodId = selectedItems.filter((f) => f.foodId == null);
   if (missingFoodId.length > 0) {
     saveErrorMessage.value =
-      "현재 서버 정책상 직접 추가한 음식은 저장할 수 없어요. 음식 DB에서 동일한 이름의 음식을 선택해 추가하거나, 백엔드에서 diet_foods.food_id를 nullable로 변경/별도 저장 방식을 지원해야 합니다.";
+      "음식 DB에 등록된 음식만 저장할 수 있어요. 음식 검색에서 선택한 음식만 추가해주세요.";
     return;
   }
 
   try {
     if (isEditMode.value && editDietId.value) {
       // 수정 모드
-      const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f) => ({
-        foodId: f.foodId!,
-        name: f.name,
-        amount: f.amount,
-        unit: 'g',
+      const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f, index) => ({
+        foodId: f.foodId || null,
+        foodName: f.name,
+        serveCount: f.amount, // 그램 단위를 그대로 전송 (백엔드에서 인분으로 처리할 수도 있음)
+        calories: f.calories || 0,
+        carbs: f.carbs || 0,
+        protein: f.protein || 0,
+        fat: f.fat || 0,
+        orderIndex: index + 1, // 1부터 시작
       }));
 
-      await dietStore.updateMyDiet(editDietId.value, {
-        date: selectedDate.value,
-        timeSlot: toTimeSlot(selectedMealType.value),
+      // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성 (Spring Boot LocalDateTime 기본 형식)
+      const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
+      
+      const updatePayloadData = {
+        date: dateWithTime, // ISO datetime 형식 (e.g. "2025-12-05T08:30:00")
+        timeSlot: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: updatePayload,
         memo: memo.value.trim() ? memo.value.trim() : undefined,
-      });
+      };
+      
+      // 디버깅: 실제로 보내는 데이터 확인
+      console.log('📤 [MealRegister] updateMyDiet 요청 데이터:', JSON.stringify(updatePayloadData, null, 2));
+      
+      await dietStore.updateMyDiet(editDietId.value, updatePayloadData);
     } else {
-      // 생성 모드
-      await dietStore.createMyDiet({
-        recordedAt: toRecordedAt(selectedDate.value, selectedTime.value),
-        mealType: toTimeSlot(selectedMealType.value),
-        items: selectedItems.map((f, idx) => ({
-          foodId: f.foodId ?? null,
-          name: f.name,
-          serveCount: f.amount,
-          orderIndex: idx + 1,
+      // 생성 모드 - API 명세에 맞춘 형식
+      // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성 (Spring Boot LocalDateTime 기본 형식)
+      const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
+      
+      const payload = {
+        date: dateWithTime, // ISO datetime 형식 (e.g. "2025-12-05T08:30:00")
+        timeSlot: toTimeSlot(selectedMealType.value) as DietTimeSlot, // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
+        items: selectedItems.map((f, index) => ({
+          foodId: f.foodId || null,
+          foodName: f.name,
+          serveCount: f.amount, // 그램 단위를 그대로 전송 (백엔드에서 인분으로 처리할 수도 있음)
+          calories: f.calories || 0,
+          carbs: f.carbs || 0,
+          protein: f.protein || 0,
+          fat: f.fat || 0,
+          orderIndex: index + 1, // 1부터 시작
         })),
         memo: memo.value.trim() ? memo.value.trim() : undefined,
-      });
+      };
+      
+      // 디버깅: 실제로 보내는 데이터 확인
+      console.log('📤 [MealRegister] createMyDiet 요청 데이터:', JSON.stringify(payload, null, 2));
+      console.log('📤 [MealRegister] items 개수:', payload.items.length);
+      console.log('📤 [MealRegister] 각 item:', payload.items.map(item => ({
+        foodId: item.foodId,
+        foodName: item.foodName,
+        serveCount: item.serveCount,
+        orderIndex: item.orderIndex,
+        calories: item.calories,
+        carbs: item.carbs,
+        protein: item.protein,
+        fat: item.fat,
+      })));
+      
+      await dietStore.createMyDiet(payload);
     }
     router.push("/dashboard");
   } catch (e: any) {
@@ -476,51 +683,53 @@ const handleSave = async () => {
           </div>
 
           <!-- 음식 DB에서 추가하기 (/api/foods) -->
-          <div class="space-y-3">
-            <div class="flex items-center gap-2">
+          <div ref="autocompleteContainerRef" class="space-y-3 autocomplete-container">
+            <div class="relative">
               <Input
+                ref="inputRef"
                 v-model="catalogKeyword"
                 placeholder="음식 검색 (예: 닭가슴살)"
                 class="h-10 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600"
-                @keyup.enter="fetchCatalogFoods"
+                @focus="handleInputFocus"
+                @input="handleInputChange"
+                @click.stop
               />
-              <Button
-                type="button"
-                variant="outline"
-                class="h-10 bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700 whitespace-nowrap"
-                :disabled="foodsStore.isLoading"
-                @click="fetchCatalogFoods"
+              
+              <!-- 자동완성 드롭다운 -->
+              <div
+                v-if="showAutocomplete && catalogKeyword.trim().length > 0 && filteredFoodOptions.length > 0"
+                class="absolute z-50 w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+                @click.stop
               >
-                검색
-              </Button>
+                <div
+                  v-for="option in filteredFoodOptions"
+                  :key="option.value"
+                  @click.stop="handleSelectFood(option.value)"
+                  class="px-4 py-3 hover:bg-zinc-800 cursor-pointer transition-colors border-b border-zinc-800 last:border-b-0"
+                >
+                  <div class="text-white text-sm font-medium">{{ option.food.name }}</div>
+                  <div class="text-zinc-400 text-xs mt-1">
+                    {{ option.food.calories }}kcal · 탄 {{ option.food.carbohydrate }}g · 단백질 {{ option.food.protein }}g · 지방 {{ option.food.fat }}g
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 검색 결과 없음 -->
+              <div
+                v-if="showAutocomplete && catalogKeyword.trim().length > 0 && !foodsStore.isLoading && filteredFoodOptions.length === 0"
+                class="absolute z-50 w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-lg shadow-lg p-4"
+                @click.stop
+              >
+                <div class="text-zinc-400 text-sm text-center">검색 결과가 없습니다.</div>
+              </div>
             </div>
 
             <div v-if="foodsStore.errorMessage" class="text-sm text-red-400">
               {{ foodsStore.errorMessage }}
             </div>
 
-            <div class="flex items-center gap-2">
-              <Select
-                :model-value="selectedCatalogFoodId"
-                @update:model-value="(val) => (selectedCatalogFoodId = val)"
-                :options="catalogFoodOptions"
-                :disabled="foodsStore.isLoading || catalogFoodOptions.length === 0"
-                placeholder="음식을 선택하세요"
-                class="h-10 bg-zinc-900 border-zinc-800 text-white"
-              />
-              <Button
-                type="button"
-                class="h-10 bg-emerald-500 hover:bg-emerald-600 text-white whitespace-nowrap"
-                :disabled="foodsStore.isLoading || !selectedCatalogFoodId"
-                @click="handleAddCatalogFood"
-              >
-                추가
-              </Button>
-            </div>
-
-            <div v-if="foodsStore.isLoading" class="text-xs text-zinc-500">음식 목록 불러오는 중...</div>
-            <div v-else-if="catalogFoodOptions.length === 0" class="text-xs text-zinc-500">
-              음식 목록이 비어있어요.
+            <div v-if="foodsStore.isLoading && catalogKeyword.trim().length > 0" class="text-xs text-zinc-500">
+              음식 목록 불러오는 중...
             </div>
           </div>
 
@@ -562,7 +771,10 @@ const handleSave = async () => {
                   <!-- 수량 드롭다운 -->
                   <Select
                     :model-value="food.amount.toString()"
-                    @update:model-value="(val) => (food.amount = Number(val))"
+                    @update:model-value="(val) => {
+                      food.amount = Number(val);
+                      updateFoodNutrition(food);
+                    }"
                     :options="servingOptions"
                     class="w-[100px] h-9 text-xs bg-zinc-900 border-zinc-700 text-white"
                   />
@@ -622,14 +834,6 @@ const handleSave = async () => {
             </div>
           </div>
 
-          <!-- 음식 직접 추가하기 -->
-          <button
-            @click="handleAddManualFood"
-            class="w-full py-4 border-2 border-dashed border-zinc-700 rounded-lg text-emerald-400 hover:border-emerald-500 hover:bg-emerald-500/5 transition-all flex items-center justify-center gap-2"
-          >
-            <span class="text-xl">+</span>
-            <span>음식 직접 추가하기</span>
-          </button>
         </div>
       </div>
     </div>

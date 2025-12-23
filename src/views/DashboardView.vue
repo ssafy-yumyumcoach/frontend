@@ -70,58 +70,255 @@ const getTodayDate = () => {
   return `${year}-${month}-${day}`;
 };
 
+// 식단 목록을 저장할 ref (식단별로 표시용)
+const displayedDiets = ref<Array<{
+  dietId: number;
+  timeSlot: string;
+  timeSlotLabel: string;
+  time: string; // HH:mm 형식
+  totalCalories: number;
+  totalCarbs: number;
+  totalProtein: number;
+  totalFat: number;
+  items: Array<{ name: string; amount: number; calories: number; carbs: number; protein: number; fat: number }>;
+}>>([]);
+
 const fetchTodayDiets = async () => {
   try {
     const today = getTodayDate();
+    console.log('📅 [Dashboard] 오늘 날짜:', today);
+    console.log('📞 [Dashboard] getMyDiets API 호출 시작');
     const res = await dietStore.getMyDiets(today);
+    console.log('✅ [Dashboard] getMyDiets API 응답:', res);
+    console.log('✅ [Dashboard] res 타입:', typeof res);
+    console.log('✅ [Dashboard] res가 배열인가?', Array.isArray(res));
+    console.log('✅ [Dashboard] res.diets:', res.diets);
     
-    const diets = res.diets || [];
+    // API 응답 구조에 따라 유연하게 처리
+    let diets: any[] = [];
+    if (Array.isArray(res)) {
+      // 백엔드가 직접 배열을 반환하는 경우
+      console.log('✅ [Dashboard] 배열로 직접 반환됨');
+      diets = res;
+    } else if (res && typeof res === 'object' && res.diets && Array.isArray(res.diets)) {
+      // 백엔드가 { date, diets } 형태로 반환하는 경우
+      console.log('✅ [Dashboard] { date, diets } 형태로 반환됨');
+      diets = res.diets;
+    } else {
+      console.log('⚠️ [Dashboard] 예상치 못한 응답 구조:', res);
+      diets = [];
+    }
+    
+    console.log('📋 [Dashboard] 최종 diets 배열:', diets);
+    console.log('📋 [Dashboard] diets 개수:', diets.length);
+    
+    // 각 diet 객체의 상세 정보 로그
+    if (diets.length > 0) {
+      console.log('🔍 [Dashboard] 첫 번째 diet 상세:', JSON.stringify(diets[0], null, 2));
+      console.log('🔍 [Dashboard] 첫 번째 diet의 모든 키:', Object.keys(diets[0]));
+      console.log('🔍 [Dashboard] 첫 번째 diet.items:', diets[0].items);
+      console.log('🔍 [Dashboard] 첫 번째 diet.items 타입:', typeof diets[0].items);
+      console.log('🔍 [Dashboard] 첫 번째 diet.items가 배열인가?', Array.isArray(diets[0].items));
+      console.log('🔍 [Dashboard] 첫 번째 diet.items가 null인가?', diets[0].items === null);
+      console.log('🔍 [Dashboard] 첫 번째 diet.items가 undefined인가?', diets[0].items === undefined);
+      console.log('🔍 [Dashboard] 첫 번째 diet.totalCalories:', diets[0].totalCalories);
+      console.log('🔍 [Dashboard] 첫 번째 diet.timeSlot:', diets[0].timeSlot);
+      console.log('🔍 [Dashboard] 첫 번째 diet.createdAt:', diets[0].createdAt);
+      
+      // items 대신 다른 필드명을 사용하는지 확인
+      console.log('🔍 [Dashboard] 첫 번째 diet.dietItems:', diets[0].dietItems);
+      console.log('🔍 [Dashboard] 첫 번째 diet.foods:', diets[0].foods);
+      console.log('🔍 [Dashboard] 첫 번째 diet.foodItems:', diets[0].foodItems);
+    }
+    
+    // 날짜 추출 (res가 객체면 res.date, 배열이면 오늘 날짜 사용)
+    const responseDate = (typeof res === 'object' && !Array.isArray(res) && res.date) ? res.date : today;
     
     // Convert to DietRecord format for compatibility
-    const dietRecords: DietRecord[] = diets.map((diet) => ({
-      dietId: diet.dietId,
-      recordedAt: `${res.date}T12:00:00`, // timeSlot만 있고 정확한 시간이 없으므로 기본값 사용
-      mealType: diet.timeSlot,
-      items: diet.items.map((item) => ({
-        name: item.name,
-        serveCount: item.amount,
-      })),
-      totalCalories: diet.totalCalories,
-    }));
+    // 백엔드 응답 구조: { id, mealType, date (시간 포함), items: null, ... }
+    const dietRecords: DietRecord[] = diets.map((diet: any) => {
+      // items가 null이거나 undefined인 경우 빈 배열로 처리
+      let items: any[] = [];
+      
+      if (diet.items !== null && diet.items !== undefined && Array.isArray(diet.items)) {
+        items = diet.items;
+      }
+      
+      // 백엔드 필드명 매핑: id → dietId, mealType → timeSlot
+      // date 필드에 시간 정보가 포함되어 있으므로 우선 사용
+      const dateTimeForRecord = diet.date || diet.recordedAt || `${responseDate}T12:00:00`;
+      return {
+        dietId: diet.id || diet.dietId,
+        recordedAt: dateTimeForRecord,
+        mealType: diet.mealType || diet.timeSlot,
+        items: items.map((item: any) => ({
+          name: item?.name || '',
+          serveCount: item?.amount || item?.serveCount || 0,
+        })),
+        totalCalories: diet.totalCalories || 0,
+      };
+    });
     
     todayDiets.value = dietRecords;
 
-    // Group by TimeSlot (각 식단은 하나의 타임라인 아이템으로 표시)
-    const dietTimelineItems: UnifiedTimelineItem[] = diets.map((diet) => {
-      // timeSlot을 시간으로 변환 (대략적인 시간)
-      let timeStr = "12:00";
-      switch (diet.timeSlot) {
-        case "BREAKFAST":
-          timeStr = "08:00";
-          break;
-        case "LUNCH":
-          timeStr = "12:30";
-          break;
-        case "DINNER":
-          timeStr = "19:00";
-          break;
-        case "SNACK":
-          timeStr = "15:00";
-          break;
-      }
+    // 식단 목록 표시용 데이터 생성
+    // 백엔드 응답 구조에 맞춰 필드명 매핑: id → dietId, mealType → timeSlot, recordedAt → createdAt
+    displayedDiets.value = await Promise.all(
+      diets.map(async (diet: any) => {
+        // 백엔드 필드명 매핑
+        const dietId = diet.id || diet.dietId;
+        const timeSlot = diet.mealType || diet.timeSlot; // mealType이 실제 필드명
+        // date 필드에 시간 정보가 포함되어 있으므로 우선 사용, 없으면 recordedAt 또는 createdAt 사용
+        const dateTime = diet.date || diet.recordedAt || diet.createdAt;
+        
+        // items가 null이면 상세 조회로 가져오기
+        let items: any[] = [];
+        if (diet.items !== null && diet.items !== undefined && Array.isArray(diet.items)) {
+          items = diet.items;
+        } else if (dietId) {
+          // items가 null이면 상세 조회로 가져오기
+          try {
+            console.log(`📞 [Dashboard] dietId ${dietId}의 상세 정보 조회 중...`);
+            const detail = await dietStore.getMyDietDetail(dietId);
+            console.log(`✅ [Dashboard] dietId ${dietId} 상세 조회 완료:`, detail);
+            console.log(`✅ [Dashboard] detail.items:`, detail.items);
+            console.log(`✅ [Dashboard] detail.items 타입:`, typeof detail.items);
+            console.log(`✅ [Dashboard] detail.items가 배열인가?`, Array.isArray(detail.items));
+            
+            if (detail.items && Array.isArray(detail.items) && detail.items.length > 0) {
+              items = detail.items;
+              console.log(`✅ [Dashboard] dietId ${dietId}의 items 가져옴:`, items.length, '개');
+              console.log(`✅ [Dashboard] 첫 번째 item:`, items[0]);
+              console.log(`✅ [Dashboard] 첫 번째 item의 모든 키:`, Object.keys(items[0]));
+              console.log(`✅ [Dashboard] 첫 번째 item.name:`, items[0].name);
+              console.log(`✅ [Dashboard] 첫 번째 item.foodName:`, items[0].foodName);
+            } else {
+              console.warn(`⚠️ [Dashboard] dietId ${dietId}의 items가 비어있음 또는 배열이 아님`);
+            }
+          } catch (e) {
+            console.error(`❌ [Dashboard] dietId ${dietId} 상세 조회 실패:`, e);
+          }
+        }
+        
+        let timeSlotLabel = "";
+        switch (timeSlot) {
+          case "BREAKFAST":
+            timeSlotLabel = "아침";
+            break;
+          case "LUNCH":
+            timeSlotLabel = "점심";
+            break;
+          case "DINNER":
+            timeSlotLabel = "저녁";
+            break;
+          case "SNACK":
+            timeSlotLabel = "간식";
+            break;
+          default:
+            timeSlotLabel = timeSlot || "식단";
+        }
 
-      // Create Description (e.g. "밥, 닭가슴살, 샐러드")
-      const desc = diet.items.map((item) => item.name).join(", ");
+        // 시간 추출 (date 필드에 시간 정보가 포함되어 있음)
+        let timeStr = "12:00";
+        if (dateTime) {
+          try {
+            const date = new Date(dateTime);
+            if (!isNaN(date.getTime())) {
+              const hours = String(date.getHours()).padStart(2, '0');
+              const minutes = String(date.getMinutes()).padStart(2, '0');
+              timeStr = `${hours}:${minutes}`;
+              console.log(`✅ [Dashboard] dietId ${dietId}의 시간 추출: ${dateTime} → ${timeStr}`);
+            } else {
+              throw new Error('Invalid date');
+            }
+          } catch (e) {
+            console.warn(`⚠️ [Dashboard] dietId ${dietId}의 dateTime 파싱 실패: ${dateTime}`, e);
+            // dateTime 파싱 실패 시 timeSlot에 따라 기본값 사용
+            switch (timeSlot) {
+              case "BREAKFAST": timeStr = "08:00"; break;
+              case "LUNCH": timeStr = "12:30"; break;
+              case "DINNER": timeStr = "19:00"; break;
+              case "SNACK": timeStr = "15:00"; break;
+            }
+          }
+        } else {
+          // dateTime이 없으면 timeSlot에 따라 기본값
+          console.warn(`⚠️ [Dashboard] dietId ${dietId}의 dateTime이 없음, timeSlot 기본값 사용`);
+          switch (timeSlot) {
+            case "BREAKFAST": timeStr = "08:00"; break;
+            case "LUNCH": timeStr = "12:30"; break;
+            case "DINNER": timeStr = "19:00"; break;
+            case "SNACK": timeStr = "15:00"; break;
+          }
+        }
+        
+        // totalCalories가 없으면 items의 calories 합계로 계산
+        let totalCal = diet.totalCalories || 0;
+        if (totalCal === 0 && items.length > 0) {
+          totalCal = items.reduce((sum: number, item: any) => {
+            const itemCal = item?.calories || 0;
+            return sum + (typeof itemCal === 'number' ? itemCal : 0);
+          }, 0);
+        }
+
+        // 영양소 정보 추출 및 총합 계산
+        const mappedItems = items.map((item: any) => {
+          // name 필드가 없을 수 있으므로 여러 가능성 확인
+          const itemName = item?.name || item?.foodName || item?.food?.name || '';
+          console.log(`🔍 [Dashboard] item 매핑:`, { 
+            item, 
+            name: itemName, 
+            itemKeys: Object.keys(item || {}) 
+          });
+          return {
+            name: itemName,
+            amount: item?.amount || 0,
+            calories: item?.calories || 0,
+            carbs: item?.carbs || item?.carbohydrate || 0,
+            protein: item?.protein || 0,
+            fat: item?.fat || 0,
+          };
+        });
+
+        // 총 영양소 계산
+        const totalCarbs = mappedItems.reduce((sum: number, item) => sum + (item.carbs || 0), 0);
+        const totalProtein = mappedItems.reduce((sum: number, item) => sum + (item.protein || 0), 0);
+        const totalFat = mappedItems.reduce((sum: number, item) => sum + (item.fat || 0), 0);
+
+        return {
+          dietId: dietId,
+          timeSlot: timeSlot,
+          timeSlotLabel: timeSlotLabel,
+          time: timeStr,
+          totalCalories: totalCal,
+          totalCarbs: totalCarbs,
+          totalProtein: totalProtein,
+          totalFat: totalFat,
+          items: mappedItems,
+        };
+      })
+    );
+    console.log('✅ [Dashboard] displayedDiets 설정 완료:', displayedDiets.value);
+    console.log('✅ [Dashboard] displayedDiets 개수:', displayedDiets.value.length);
+
+    // Group by TimeSlot (각 식단은 하나의 타임라인 아이템으로 표시)
+    // displayedDiets에서 이미 items를 가져왔으므로 그것을 사용
+    const dietTimelineItems: UnifiedTimelineItem[] = displayedDiets.value.map((diet) => {
+      const desc = diet.items.map((item) => item.name).filter(Boolean).join(", ") || "음식 정보 없음";
+
+      // 영양소 정보 포맷팅
+      const nutritionInfo = `탄수화물 ${Math.round(diet.totalCarbs || 0)}g · 단백질 ${Math.round(diet.totalProtein || 0)}g · 지방 ${Math.round(diet.totalFat || 0)}g`;
+      const subDesc = `${diet.totalCalories || 0} kcal · ${nutritionInfo}`;
 
       return {
         type: "MEAL",
         id: diet.dietId,
         recordIds: [diet.dietId],
-        time: timeStr,
-        title: "식단",
+        time: diet.time,
+        title: diet.timeSlotLabel || "식단", // "아침", "점심", "저녁", "간식" 표시
         desc: desc,
-        subDesc: `${diet.totalCalories} kcal 섭취`,
-        calories: diet.totalCalories,
+        subDesc: subDesc,
+        calories: diet.totalCalories || 0,
         colorClass: "emerald",
         icon: Utensils,
       };
@@ -133,11 +330,14 @@ const fetchTodayDiets = async () => {
       a.time.localeCompare(b.time)
     );
 
-    // Update stats
-    const totalCalories = diets.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
+    // Update stats (displayedDiets의 totalCalories 사용)
+    const totalCalories = displayedDiets.value.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
     dailyStats.intakeCalories = Math.round(totalCalories);
+    console.log('✅ [Dashboard] 총 칼로리 업데이트:', dailyStats.intakeCalories);
   } catch (e) {
-    console.error("Failed to fetch diet records", e);
+    console.error("❌ [Dashboard] Failed to fetch diet records", e);
+    console.error("❌ [Dashboard] 에러 상세:", e);
+    displayedDiets.value = [];
   }
 };
 
@@ -253,22 +453,21 @@ const loadMealPlan = async () => {
       aiMealPlan.value = res.data;
     } else {
       // 2. If generated=false (or empty), generate new plan
-      console.log("Meal plan not generated yet. Generating new one...");
       const genRes = await aiApi.generateMealPlan({ targetDate: today });
       aiMealPlan.value = genRes.data;
     }
   } catch (e: any) {
-    // Fallback: If 404 or other issues, try generating
+    // 백엔드 API가 아직 구현되지 않은 경우 404 에러를 조용히 처리
     if (e.response && e.response.status === 404) {
-      try {
-        console.log("No existing meal plan found (404). Generating new one...");
-        const genRes = await aiApi.generateMealPlan({ targetDate: today });
-        aiMealPlan.value = genRes.data;
-      } catch (genError) {
-        console.error("Failed to generate meal plan", genError);
-      }
+      // AI meal plan 기능이 아직 준비되지 않았으므로 조용히 무시
+      // 콘솔 로그 제거하여 불필요한 에러 메시지 방지
+      aiMealPlan.value = null;
     } else {
-      console.error("Failed to fetch meal plan", e);
+      // 404가 아닌 다른 에러는 개발 환경에서만 로그 출력
+      if (import.meta.env.DEV) {
+        console.warn("AI meal plan API 에러 (기능 미구현 가능성):", e);
+      }
+      aiMealPlan.value = null;
     }
   } finally {
     isAiLoading.value = false;
