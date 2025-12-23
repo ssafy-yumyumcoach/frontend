@@ -41,6 +41,7 @@ interface UnifiedTimelineItem {
   calories?: number;
   colorClass: string; // "emerald" | "blue" etc.
   icon: any; // Icon component
+  imageUrl?: string;
 }
 
 const timelineItems = ref<UnifiedTimelineItem[]>([]);
@@ -113,6 +114,7 @@ const displayedDiets = ref<
     totalProtein: number;
     totalFat: number;
     items: Array<{ name: string; amount: number; calories: number; carbs: number; protein: number; fat: number }>;
+    imageUrl?: string;
   }>
 >([]);
 
@@ -163,6 +165,15 @@ const fetchDailyDiets = async (targetDate: string) => {
         const dietId = diet.id || diet.dietId;
         const timeSlot = diet.mealType || diet.timeSlot; 
         const dateTime = diet.date || diet.recordedAt || diet.createdAt;
+        
+        const cdnDomain = 'https://d3sn2183nped6z.cloudfront.net/';
+        let imageUrl = diet.imageUrl || diet.imgUrl || diet.image;
+        if (imageUrl && !imageUrl.startsWith('http')) {
+          imageUrl = `${cdnDomain}${imageUrl}`;
+        }
+        if (imageUrl) {
+            console.log("🥗 Diet Image URL:", imageUrl);
+        }
 
         let items: any[] = [];
         if (diet.items !== null && diet.items !== undefined && Array.isArray(diet.items)) {
@@ -245,6 +256,7 @@ const fetchDailyDiets = async (targetDate: string) => {
           totalProtein: totalProtein,
           totalFat: totalFat,
           items: mappedItems,
+          imageUrl: imageUrl,
         };
       })
     );
@@ -266,6 +278,7 @@ const fetchDailyDiets = async (targetDate: string) => {
         calories: diet.totalCalories || 0,
         colorClass: "emerald",
         icon: Utensils,
+        imageUrl: diet.imageUrl,
       };
     });
 
@@ -753,16 +766,23 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             <div class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5">
               <div class="flex items-start gap-4">
                 <div
-                  class="w-20 h-20 rounded-lg flex items-center justify-center flex-shrink-0"
+                  class="w-28 h-28 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
                   :class="
                     item.colorClass === 'emerald'
                       ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20'
                       : 'bg-gradient-to-br from-blue-500/20 to-cyan-500/20'
                   "
                 >
+                  <img
+                    v-if="item.imageUrl"
+                    :src="item.imageUrl"
+                    alt="Meal photo"
+                    class="w-full h-full object-contain bg-zinc-950"
+                  />
                   <component
+                    v-else
                     :is="item.icon"
-                    class="w-8 h-8"
+                    class="w-10 h-10"
                     :class="item.colorClass === 'emerald' ? 'text-emerald-500' : 'text-blue-500'"
                   />
                 </div>
