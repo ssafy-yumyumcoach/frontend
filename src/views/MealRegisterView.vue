@@ -11,7 +11,7 @@ import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
 import Textarea from "@/components/ui/Textarea.vue";
-import dietApi, { type UpdateMyDietItemRequest } from "@/api/diet";
+import { type UpdateMyDietItemRequest } from "@/api/diet";
 
 const router = useRouter();
 const route = useRoute();
@@ -108,60 +108,58 @@ const loadDietForEdit = async () => {
   if (!isEditMode.value || !editDietId.value) return;
 
   try {
-    // getDailyDiet로 전체 목록을 가져와서 해당 dietId 찾기
-    const today = selectedDate.value;
-    const res = await dietApi.getDailyDiet(today);
+    // getMyDiets로 전체 목록을 가져와서 해당 dietId 찾기
+    const date = selectedDate.value;
+    const res = await dietStore.getMyDiets(date);
     
-    // 응답 구조에 따라 조정 필요 (예상: res.data 또는 res.data.diets)
-    const diets = Array.isArray(res.data) ? res.data : (res.data?.diets || []);
-    const diet = diets.find((d: any) => d.dietId === editDietId.value);
+    const diet = res.diets.find((d) => d.dietId === editDietId.value);
     
     if (!diet) {
       saveErrorMessage.value = "수정할 식단을 찾을 수 없습니다.";
       return;
     }
 
-    // 날짜/시간 설정
-    if (diet.recordedAt) {
-      const dateTime = new Date(diet.recordedAt);
-      selectedDate.value = dateTime.toISOString().split('T')[0];
-      const hours = String(dateTime.getHours()).padStart(2, '0');
-      const minutes = String(dateTime.getMinutes()).padStart(2, '0');
-      selectedTime.value = `${hours}:${minutes}`;
+    // 날짜는 이미 selectedDate에 설정되어 있음
+    // timeSlot에 따라 시간 설정 (대략적인 시간)
+    switch (diet.timeSlot) {
+      case 'BREAKFAST':
+        selectedTime.value = '08:00';
+        break;
+      case 'LUNCH':
+        selectedTime.value = '12:30';
+        break;
+      case 'DINNER':
+        selectedTime.value = '19:00';
+        break;
+      case 'SNACK':
+        selectedTime.value = '15:00';
+        break;
     }
 
     // 식사 타입 설정
-    if (diet.mealType || diet.timeSlot) {
-      const mealType = diet.mealType || diet.timeSlot;
-      switch (mealType) {
-        case 'BREAKFAST':
-          selectedMealType.value = 'breakfast';
-          break;
-        case 'LUNCH':
-          selectedMealType.value = 'lunch';
-          break;
-        case 'DINNER':
-          selectedMealType.value = 'dinner';
-          break;
-        case 'SNACK':
-          selectedMealType.value = 'snack';
-          break;
-      }
-    }
-
-    // 메모 설정
-    if (diet.memo) {
-      memo.value = diet.memo;
+    switch (diet.timeSlot) {
+      case 'BREAKFAST':
+        selectedMealType.value = 'breakfast';
+        break;
+      case 'LUNCH':
+        selectedMealType.value = 'lunch';
+        break;
+      case 'DINNER':
+        selectedMealType.value = 'dinner';
+        break;
+      case 'SNACK':
+        selectedMealType.value = 'snack';
+        break;
     }
 
     // 음식 목록 설정
     if (diet.items && Array.isArray(diet.items)) {
-      foods.value = diet.items.map((item: any, idx: number) => ({
+      foods.value = diet.items.map((item, idx: number) => ({
         id: `edit-${item.dietItemId || idx}`,
         foodId: item.foodId || null,
         name: item.name || '',
         checked: true,
-        amount: item.amount || item.serveCount || 100,
+        amount: item.amount || 100,
         unit: item.unit || 'g',
         calories: item.calories || 0,
         carbs: 0, // 상세 정보가 없으면 0
@@ -172,7 +170,7 @@ const loadDietForEdit = async () => {
     }
   } catch (e: any) {
     console.error('Failed to load diet for edit', e);
-    saveErrorMessage.value = "식단 정보를 불러오는데 실패했습니다.";
+    saveErrorMessage.value = dietStore.errorMessage || "식단 정보를 불러오는데 실패했습니다.";
   }
 };
 

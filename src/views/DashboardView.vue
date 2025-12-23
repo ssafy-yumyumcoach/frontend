@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock, Utensils } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } from "@/api/exercise/index";
-import dietApi from "@/api/diet";
 import { useDietStore } from "@/stores/diet";
 
 const router = useRouter();
@@ -72,53 +71,55 @@ const getTodayDate = () => {
 const fetchTodayDiets = async () => {
   try {
     const today = getTodayDate();
-    const res = await dietApi.getDailyDiet(today);
+    const res = await dietStore.getMyDiets(today);
     
-    // 응답 구조에 따라 조정 필요 (예상: res.data 또는 res.data.diets)
-    const diets = Array.isArray(res.data) ? res.data : (res.data?.diets || []);
-    todayDiets.value = diets;
+    const diets = res.diets || [];
+    
+    // Convert to DietRecord format for compatibility
+    const dietRecords: DietRecord[] = diets.map((diet) => ({
+      dietId: diet.dietId,
+      recordedAt: `${res.date}T12:00:00`, // timeSlot만 있고 정확한 시간이 없으므로 기본값 사용
+      mealType: diet.timeSlot,
+      items: diet.items.map((item) => ({
+        name: item.name,
+        serveCount: item.amount,
+      })),
+      totalCalories: diet.totalCalories,
+    }));
+    
+    todayDiets.value = dietRecords;
 
-    // Group by Time
-    const groupedDiets: Record<string, DietRecord[]> = {};
-
-    diets.forEach((diet: DietRecord) => {
-      let timeStr = "00:00";
-      if (diet.recordedAt && diet.recordedAt.includes("T")) {
-        const parts = diet.recordedAt.split("T");
-        if (parts.length > 1) {
-          timeStr = parts[1].substring(0, 5); // HH:MM
-        }
+    // Group by TimeSlot (각 식단은 하나의 타임라인 아이템으로 표시)
+    const dietTimelineItems: UnifiedTimelineItem[] = diets.map((diet) => {
+      // timeSlot을 시간으로 변환 (대략적인 시간)
+      let timeStr = "12:00";
+      switch (diet.timeSlot) {
+        case "BREAKFAST":
+          timeStr = "08:00";
+          break;
+        case "LUNCH":
+          timeStr = "12:30";
+          break;
+        case "DINNER":
+          timeStr = "19:00";
+          break;
+        case "SNACK":
+          timeStr = "15:00";
+          break;
       }
-
-      if (!groupedDiets[timeStr]) {
-        groupedDiets[timeStr] = [];
-      }
-      groupedDiets[timeStr].push(diet);
-    });
-
-    // Convert Groups to TimelineItems
-    const dietTimelineItems: UnifiedTimelineItem[] = Object.keys(groupedDiets).map((timeStr) => {
-      const group = groupedDiets[timeStr];
-      const firstItem = group[0];
-
-      // Calculate totals
-      const totalGroupCalories = group.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
 
       // Create Description (e.g. "밥, 닭가슴살, 샐러드")
-      const allItems = group.flatMap((d) => d.items.map((item) => item.name));
-      const desc = [...new Set(allItems)].join(", ");
-
-      const dietIds = group.map((d) => d.dietId);
+      const desc = diet.items.map((item) => item.name).join(", ");
 
       return {
         type: "MEAL",
-        id: firstItem.dietId,
-        recordIds: dietIds,
+        id: diet.dietId,
+        recordIds: [diet.dietId],
         time: timeStr,
         title: "식단",
         desc: desc,
-        subDesc: `${totalGroupCalories} kcal 섭취`,
-        calories: totalGroupCalories,
+        subDesc: `${diet.totalCalories} kcal 섭취`,
+        calories: diet.totalCalories,
         colorClass: "emerald",
         icon: Utensils,
       };
@@ -131,7 +132,7 @@ const fetchTodayDiets = async () => {
     );
 
     // Update stats
-    const totalCalories = diets.reduce((sum: number, d: DietRecord) => sum + (d.totalCalories || 0), 0);
+    const totalCalories = diets.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
     dailyStats.intakeCalories = Math.round(totalCalories);
   } catch (e) {
     console.error("Failed to fetch diet records", e);

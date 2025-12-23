@@ -83,6 +83,27 @@ export interface UpdateMyDietResponse {
   updatedAt: string; // ISO string (e.g. 2025-12-05T12:10:00)
 }
 
+export interface MyDietItem {
+  dietItemId: number;
+  foodId: number;
+  name: string;
+  amount: number;
+  unit: string;
+  calories: number;
+}
+
+export interface MyDiet {
+  dietId: number;
+  timeSlot: DietTimeSlot;
+  totalCalories: number;
+  items: MyDietItem[];
+}
+
+export interface GetMyDietsResponse {
+  date: string; // YYYY-MM-DD
+  diets: MyDiet[];
+}
+
 export default {
   // Diet
   getDailyDiet: (date: string) => api.get(`/diets?date=${date}`),
@@ -106,6 +127,13 @@ export default {
    */
   updateMyDiet: (dietId: number, data: UpdateMyDietRequest) => 
     api.put<UpdateMyDietResponse>(`/me/diets/${dietId}`, data),
+
+  /**
+   * 특정 날짜의 내 식단 기록 전체 조회
+   * GET /api/me/diets?date=YYYY-MM-DD
+   */
+  getMyDiets: (date: string) => 
+    api.get<GetMyDietsResponse>(`/me/diets`, { params: { date } }),
 
   // Foods
   /**

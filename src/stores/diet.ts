@@ -5,7 +5,8 @@ import dietApi, {
   type CreateMyDietResponse,
   type DeleteMyDietResponse,
   type UpdateMyDietRequest,
-  type UpdateMyDietResponse
+  type UpdateMyDietResponse,
+  type GetMyDietsResponse
 } from "@/api/diet";
 import axios from "axios";
 
@@ -19,10 +20,12 @@ export const useDietStore = defineStore("diet", () => {
   const isCreating = ref(false);
   const isDeleting = ref(false);
   const isUpdating = ref(false);
+  const isLoadingDiets = ref(false);
   const errorMessage = ref<string>("");
   const lastCreatedDietId = ref<CreateMyDietResponse | null>(null);
   const lastDeletedDietId = ref<number | null>(null);
   const lastUpdatedDiet = ref<UpdateMyDietResponse | null>(null);
+  const myDiets = ref<GetMyDietsResponse | null>(null);
 
   const clearError = () => {
     errorMessage.value = "";
@@ -119,17 +122,51 @@ export const useDietStore = defineStore("diet", () => {
     }
   };
 
+  const getMyDiets = async (date: string) => {
+    isLoadingDiets.value = true;
+    errorMessage.value = "";
+
+    try {
+      const response = await dietApi.getMyDiets(date);
+      myDiets.value = response.data;
+      return response.data;
+    } catch (error: unknown) {
+      let message = "식단 목록을 불러오는데 실패했습니다.";
+
+      if (axios.isAxiosError(error) && error.response) {
+        const data = error.response.data as ApiErrorResponse | undefined;
+        const status = error.response.status;
+
+        if (status === 400) {
+          message = "요청 값이 올바르지 않습니다.";
+        } else if (status === 401) {
+          message = "액세스 토큰이 유효하지 않습니다.";
+        } else if (data?.message) {
+          message = data.message;
+        }
+      }
+
+      errorMessage.value = message;
+      throw new Error(message);
+    } finally {
+      isLoadingDiets.value = false;
+    }
+  };
+
   return {
     isCreating,
     isDeleting,
     isUpdating,
+    isLoadingDiets,
     errorMessage,
     lastCreatedDietId,
     lastDeletedDietId,
     lastUpdatedDiet,
+    myDiets,
     createMyDiet,
     deleteMyDiet,
     updateMyDiet,
+    getMyDiets,
     clearError,
   };
 });
