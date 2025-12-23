@@ -235,6 +235,9 @@ const handleDeleteDiet = async (dietId: number) => {
   } catch (e) {
     console.error("Failed to delete diet", e);
     alert(dietStore.errorMessage || "식단 삭제에 실패했습니다.");
+  }
+};
+
 const aiMealPlan = ref<MealPlanResponse | null>(null);
 const isAiLoading = ref(false);
 

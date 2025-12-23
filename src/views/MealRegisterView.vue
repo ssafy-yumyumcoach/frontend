@@ -396,56 +396,6 @@ const handleSave = async () => {
   } catch (e: any) {
     saveErrorMessage.value = e?.message || dietStore.errorMessage || "식단 저장 중 오류가 발생했습니다.";
   }
-import dietApi from "@/api/diet";
-import statsApi from "@/api/stats";
-
-// ... (existing imports)
-
-// Actions
-// ... (existing actions)
-
-const handleSave = async () => {
-    try {
-        // 1. Prepare data for dietApi.logMeal
-        // Note: The API format might need adjustment based on backend spec. 
-        // Assuming current simple structure for now or matching identified properties.
-        // If the backend expects specific food list format, mapping is needed.
-        // For now, sending the whole object as is or wrapping it.
-        
-        const payload = {
-            date: selectedDate.value,
-            mealType: selectedMealType.value.toUpperCase(), // Assuming Enum matches
-            foods: foods.value.map(f => ({
-                name: f.name,
-                calories: f.calories,
-                carbs: f.carbs,
-                protein: f.protein,
-                fat: f.fat,
-                quantity: f.servingAmount, // Mapping servingAmount to quantity/amount
-                // Add validation/fallback if needed
-            }))
-        };
-
-        console.log("Saving meal payload:", payload);
-        
-        // Call API
-        await dietApi.logMeal(payload);
-
-        // 2. Trigger AI Review Generation
-        try {
-            await statsApi.generateNutritionReview({ anchorDate: selectedDate.value });
-            console.log("AI Nutrition Review Generation triggered successfully");
-        } catch (reviewError) {
-            console.warn("Failed to generate nutrition review:", reviewError);
-            // Non-blocking error for user flow
-        }
-
-        router.push("/dashboard");
-
-    } catch (error) {
-        console.error("Failed to save meal:", error);
-        alert("식단 저장에 실패했습니다.");
-    }
 };
 </script>
 
