@@ -7,6 +7,7 @@ import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } f
 import { useDietStore } from "@/stores/diet";
 import aiApi, { type MealPlanResponse } from "@/api/ai/index";
 import statsApi from "@/api/stats";
+import challengeApi, { type ChallengeSummary } from "@/api/challenge";
 
 const router = useRouter();
 const dietStore = useDietStore();
@@ -74,9 +75,9 @@ const fetchTodayDiets = async () => {
   try {
     const today = getTodayDate();
     const res = await dietStore.getMyDiets(today);
-    
+
     const diets = res.diets || [];
-    
+
     // Convert to DietRecord format for compatibility
     const dietRecords: DietRecord[] = diets.map((diet) => ({
       dietId: diet.dietId,
@@ -88,7 +89,7 @@ const fetchTodayDiets = async () => {
       })),
       totalCalories: diet.totalCalories,
     }));
-    
+
     todayDiets.value = dietRecords;
 
     // Group by TimeSlot (각 식단은 하나의 타임라인 아이템으로 표시)
@@ -129,9 +130,7 @@ const fetchTodayDiets = async () => {
 
     // Merge with exercise items
     const exerciseTimelineItems = timelineItems.value.filter((item) => item.type === "EXERCISE");
-    timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) =>
-      a.time.localeCompare(b.time)
-    );
+    timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) => a.time.localeCompare(b.time));
 
     // Update stats
     const totalCalories = diets.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
@@ -279,40 +278,52 @@ onMounted(() => {
   fetchTodayDiets();
   fetchTodayExercises();
   loadMealPlan();
+  fetchMyChallenges();
 });
 
-// Dummy Data for Challenges (Only Active)
-const activeChallenges = ref([
-  {
-    id: 1,
-    title: "2주 저녁 샐러드 챌린지",
-    image:
-      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-    progress: 45,
-    currentDay: 6,
-    totalDays: 14,
-    dDay: 8,
-  },
-  {
-    id: 2,
-    title: "매일 물 2L 마시기",
-    image: "https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-    progress: 80,
-    currentDay: 24,
-    totalDays: 30,
-    dDay: 6,
-  },
-  {
-    id: 3,
-    title: "아침 공복 유산소",
-    image:
-      "https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?w=800&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-    progress: 10,
-    currentDay: 1,
-    totalDays: 10,
-    dDay: 9,
-  },
-]);
+// --- Challenges (Real Data) ---
+const challenges = ref<ChallengeSummary[]>([]);
+
+const fetchMyChallenges = async () => {
+  try {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const currentMonth = `${year}-${month}`;
+
+    // Fetch current month (and maybe next if needed, but for "Participating" usually they are active now)
+    // Actually, if a challenge started last month and continues, it might show up in "current month" list if the API supports spanning?
+    // Assuming getChallenges returns challenges active in that month.
+    const res = await challengeApi.getChallenges(currentMonth);
+
+    const todayStr = getTodayDate();
+
+    // Filter: Joined AND Started (Exclude Pre-reg)
+    challenges.value = res.data.challenges.filter((c) => c.isJoined && c.startDate <= todayStr);
+  } catch (e) {
+    console.error("Failed to fetch challenges", e);
+  }
+};
+
+const activeChallenges = computed(() => {
+  // Map to Dashboard UI format
+  return challenges.value.map((c) => {
+    const today = new Date();
+    const endDate = new Date(c.endDate);
+    const diffTime = endDate.getTime() - today.getTime();
+    const dDay = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    return {
+      id: c.challengeId,
+      title: c.title,
+      image: c.imageUrl,
+      progress: c.progressPercentage || 0,
+      currentDay: c.successDays || 0,
+      totalDays: c.requiredSuccessDays || 0,
+      dDay: dDay,
+    };
+  });
+});
 
 const currentChallengeIndex = ref(0);
 
@@ -344,9 +355,8 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
     await fetchTodayExercises();
 
     // Trigger AI Exercise Review Generation (Fire and Forget)
-    localStorage.setItem('LAST_EXERCISE_UPDATE_TIME', new Date().toISOString());
-    statsApi.generateExerciseReview({ anchorDate: getTodayDate() }).catch(e => console.warn(e));
-
+    localStorage.setItem("LAST_EXERCISE_UPDATE_TIME", new Date().toISOString());
+    statsApi.generateExerciseReview({ anchorDate: getTodayDate() }).catch((e) => console.warn(e));
   } catch (e) {
     console.error("Failed to delete records", e);
     alert("운동 기록 삭제에 실패했습니다.");
@@ -459,8 +469,9 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
       <div
         class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col h-full relative overflow-hidden group"
       >
-        <!-- 배경 이미지 (Blur) -->
+        <!-- 배경 이미지 (Blur) - Only show if currentChallenge exists -->
         <div
+          v-if="currentChallenge"
           class="absolute inset-0 bg-cover bg-center opacity-10 blur-sm pointer-events-none transition-all duration-500"
           :style="{ backgroundImage: `url(${currentChallenge.image})` }"
         ></div>
@@ -472,8 +483,8 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
               <h2 class="text-xl text-white leading-none">참여 중인 챌린지</h2>
             </div>
 
-            <!-- Carousel Controls -->
-            <div class="flex items-center gap-2">
+            <!-- Carousel Controls - Show only if challenges exist -->
+            <div v-if="activeChallenges.length > 0" class="flex items-center gap-2">
               <button
                 @click="prevChallenge"
                 class="p-1 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors"
@@ -491,7 +502,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
           </div>
 
           <!-- Challenge Content -->
-          <div class="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+          <div v-if="currentChallenge" class="flex-1 flex flex-col items-center justify-center text-center space-y-6">
             <!-- Image Wrapper -->
             <div class="relative w-full aspect-video rounded-xl overflow-hidden shadow-lg border border-zinc-700">
               <img :src="currentChallenge.image" class="w-full h-full object-cover" alt="Challenge" />
@@ -520,6 +531,9 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
               </div>
             </div>
           </div>
+
+          <!-- Empty State -->
+          <div v-else class="flex-1 flex items-center justify-center text-zinc-500">참여 중인 챌린지가 없습니다.</div>
         </div>
       </div>
     </div>
@@ -617,7 +631,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
                       :disabled="dietStore.isDeleting"
                       class="text-sm text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-50"
                     >
-                      {{ dietStore.isDeleting ? '삭제 중...' : '삭제' }}
+                      {{ dietStore.isDeleting ? "삭제 중..." : "삭제" }}
                     </button>
                   </div>
                 </div>
