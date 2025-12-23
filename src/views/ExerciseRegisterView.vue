@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Select from "@/components/ui/Select.vue";
 import exerciseApi, { type Exercise } from "@/api/exercise";
+import statsApi from "@/api/stats";
 
 const router = useRouter();
 const dateInputRef = ref<HTMLInputElement | null>(null);
@@ -42,8 +43,16 @@ interface SelectedExercise {
 }
 
 // State
-const selectedDate = ref(new Date().toISOString().split("T")[0]);
-const selectedTime = ref("18:00");
+const getLocalDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const selectedDate = ref(getLocalDateString());
+const selectedTime = ref(new Date().toTimeString().slice(0, 5));
 const searchQuery = ref("");
 const selectedCategory = ref("전체");
 const exercises = ref<Exercise[]>([]);
@@ -272,6 +281,12 @@ const handleSave = async () => {
     const createPromise = newRecords.length > 0 ? exerciseApi.createMyExerciseRecords(newRecords) : Promise.resolve();
 
     await Promise.all([createPromise, ...updatePromises, ...deletePromises]);
+
+    // Note: AI Exercise Review generation is handled asynchronously by the backend.
+    // However, we explicitly trigger it to ensure it starts. Fire and forget.
+    // Also mark update time for frontend staleness check
+    localStorage.setItem('LAST_EXERCISE_UPDATE_TIME', new Date().toISOString());
+    statsApi.generateExerciseReview({ anchorDate: selectedDate.value }).catch((e) => console.warn(e));
 
     alert(isEditMode.value ? "운동 기록이 수정되었습니다." : "운동 기록이 저장되었습니다.");
     router.push("/dashboard");
