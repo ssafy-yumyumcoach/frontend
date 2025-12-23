@@ -5,6 +5,7 @@ import { Sparkles, Dumbbell, ChevronLeft, ChevronRight, Trophy, Activity, Clock,
 import Button from "@/components/ui/Button.vue";
 import exerciseApi, { type ExerciseRecordListItem, type ExerciseRecordDetail } from "@/api/exercise/index";
 import { useDietStore } from "@/stores/diet";
+import aiApi, { type MealPlanResponse } from "@/api/aichatbot";
 
 const router = useRouter();
 const dietStore = useDietStore();
@@ -236,9 +237,47 @@ const handleDeleteDiet = async (dietId: number) => {
   }
 };
 
+const aiMealPlan = ref<MealPlanResponse | null>(null);
+const isAiLoading = ref(false);
+
+const loadMealPlan = async () => {
+  isAiLoading.value = true;
+  const today = getTodayDate();
+
+  try {
+    // 1. Try to fetch existing plan
+    const res = await aiApi.getMealPlan(today);
+
+    if (res.data && res.data.generated) {
+      aiMealPlan.value = res.data;
+    } else {
+      // 2. If generated=false (or empty), generate new plan
+      console.log("Meal plan not generated yet. Generating new one...");
+      const genRes = await aiApi.generateMealPlan({ targetDate: today });
+      aiMealPlan.value = genRes.data;
+    }
+  } catch (e: any) {
+    // Fallback: If 404 or other issues, try generating
+    if (e.response && e.response.status === 404) {
+      try {
+        console.log("No existing meal plan found (404). Generating new one...");
+        const genRes = await aiApi.generateMealPlan({ targetDate: today });
+        aiMealPlan.value = genRes.data;
+      } catch (genError) {
+        console.error("Failed to generate meal plan", genError);
+      }
+    } else {
+      console.error("Failed to fetch meal plan", e);
+    }
+  } finally {
+    isAiLoading.value = false;
+  }
+};
+
 onMounted(() => {
   fetchTodayDiets();
   fetchTodayExercises();
+  loadMealPlan();
 });
 
 // Dummy Data for Challenges (Only Active)

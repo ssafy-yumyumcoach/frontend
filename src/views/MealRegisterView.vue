@@ -12,6 +12,8 @@ import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
 import Textarea from "@/components/ui/Textarea.vue";
 import { type UpdateMyDietItemRequest } from "@/api/diet";
+import dietApi from "@/api/diet";
+import statsApi from "@/api/stats";
 
 const router = useRouter();
 const route = useRoute();
