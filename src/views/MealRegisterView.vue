@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { Upload, Trash2, X } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
@@ -11,10 +11,19 @@ import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
 import Textarea from "@/components/ui/Textarea.vue";
+import dietApi, { type UpdateMyDietItemRequest } from "@/api/diet";
 
 const router = useRouter();
+const route = useRoute();
 const foodsStore = useFoodsStore();
 const dietStore = useDietStore();
+
+// Edit mode
+const isEditMode = computed(() => route.query.mode === 'edit' && route.query.dietId);
+const editDietId = computed(() => {
+  const dietId = route.query.dietId;
+  return dietId ? Number(dietId) : null;
+});
 
 // Types
 interface FoodItem {
@@ -95,11 +104,88 @@ const fetchCatalogFoods = async () => {
   });
 };
 
-onMounted(() => {
+const loadDietForEdit = async () => {
+  if (!isEditMode.value || !editDietId.value) return;
+
+  try {
+    // getDailyDiet로 전체 목록을 가져와서 해당 dietId 찾기
+    const today = selectedDate.value;
+    const res = await dietApi.getDailyDiet(today);
+    
+    // 응답 구조에 따라 조정 필요 (예상: res.data 또는 res.data.diets)
+    const diets = Array.isArray(res.data) ? res.data : (res.data?.diets || []);
+    const diet = diets.find((d: any) => d.dietId === editDietId.value);
+    
+    if (!diet) {
+      saveErrorMessage.value = "수정할 식단을 찾을 수 없습니다.";
+      return;
+    }
+
+    // 날짜/시간 설정
+    if (diet.recordedAt) {
+      const dateTime = new Date(diet.recordedAt);
+      selectedDate.value = dateTime.toISOString().split('T')[0];
+      const hours = String(dateTime.getHours()).padStart(2, '0');
+      const minutes = String(dateTime.getMinutes()).padStart(2, '0');
+      selectedTime.value = `${hours}:${minutes}`;
+    }
+
+    // 식사 타입 설정
+    if (diet.mealType || diet.timeSlot) {
+      const mealType = diet.mealType || diet.timeSlot;
+      switch (mealType) {
+        case 'BREAKFAST':
+          selectedMealType.value = 'breakfast';
+          break;
+        case 'LUNCH':
+          selectedMealType.value = 'lunch';
+          break;
+        case 'DINNER':
+          selectedMealType.value = 'dinner';
+          break;
+        case 'SNACK':
+          selectedMealType.value = 'snack';
+          break;
+      }
+    }
+
+    // 메모 설정
+    if (diet.memo) {
+      memo.value = diet.memo;
+    }
+
+    // 음식 목록 설정
+    if (diet.items && Array.isArray(diet.items)) {
+      foods.value = diet.items.map((item: any, idx: number) => ({
+        id: `edit-${item.dietItemId || idx}`,
+        foodId: item.foodId || null,
+        name: item.name || '',
+        checked: true,
+        amount: item.amount || item.serveCount || 100,
+        unit: item.unit || 'g',
+        calories: item.calories || 0,
+        carbs: 0, // 상세 정보가 없으면 0
+        protein: 0,
+        fat: 0,
+        manualInput: false,
+      }));
+    }
+  } catch (e: any) {
+    console.error('Failed to load diet for edit', e);
+    saveErrorMessage.value = "식단 정보를 불러오는데 실패했습니다.";
+  }
+};
+
+onMounted(async () => {
   // 최초 진입 시 전체 음식 목록 로드
-  fetchCatalogFoods().catch(() => {
+  await fetchCatalogFoods().catch(() => {
     // errorMessage는 store에 저장되므로 여기서는 무시
   });
+
+  // 수정 모드인 경우 식단 데이터 로드
+  if (isEditMode.value) {
+    await loadDietForEdit();
+  }
 });
 
 const handlePhotoUpload = () => {
@@ -270,17 +356,35 @@ const handleSave = async () => {
   }
 
   try {
-    await dietStore.createMyDiet({
-      recordedAt: toRecordedAt(selectedDate.value, selectedTime.value),
-      mealType: toTimeSlot(selectedMealType.value),
-      items: selectedItems.map((f, idx) => ({
-        foodId: f.foodId ?? null,
+    if (isEditMode.value && editDietId.value) {
+      // 수정 모드
+      const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f) => ({
+        foodId: f.foodId!,
         name: f.name,
-        serveCount: f.amount,
-        orderIndex: idx + 1,
-      })),
-      memo: memo.value.trim() ? memo.value.trim() : undefined,
-    });
+        amount: f.amount,
+        unit: 'g',
+      }));
+
+      await dietStore.updateMyDiet(editDietId.value, {
+        date: selectedDate.value,
+        timeSlot: toTimeSlot(selectedMealType.value),
+        items: updatePayload,
+        memo: memo.value.trim() ? memo.value.trim() : undefined,
+      });
+    } else {
+      // 생성 모드
+      await dietStore.createMyDiet({
+        recordedAt: toRecordedAt(selectedDate.value, selectedTime.value),
+        mealType: toTimeSlot(selectedMealType.value),
+        items: selectedItems.map((f, idx) => ({
+          foodId: f.foodId ?? null,
+          name: f.name,
+          serveCount: f.amount,
+          orderIndex: idx + 1,
+        })),
+        memo: memo.value.trim() ? memo.value.trim() : undefined,
+      });
+    }
     router.push("/dashboard");
   } catch (e: any) {
     saveErrorMessage.value = e?.message || dietStore.errorMessage || "식단 저장 중 오류가 발생했습니다.";
@@ -561,10 +665,12 @@ const handleSave = async () => {
             type="button"
             @click="handleSave"
             class="bg-emerald-500 hover:bg-emerald-600 text-white px-8"
-            :disabled="dietStore.isCreating"
+            :disabled="dietStore.isCreating || dietStore.isUpdating"
           >
-            <span v-if="dietStore.isCreating">저장 중...</span>
-            <span v-else>이 식단으로 기록하기</span>
+            <span v-if="dietStore.isCreating || dietStore.isUpdating">
+              {{ isEditMode ? '수정 중...' : '저장 중...' }}
+            </span>
+            <span v-else>{{ isEditMode ? '수정하기' : '이 식단으로 기록하기' }}</span>
           </Button>
         </div>
       </div>

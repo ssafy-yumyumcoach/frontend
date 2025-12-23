@@ -50,6 +50,39 @@ export interface DeleteMyDietResponse {
   deletedAt: string; // ISO string (e.g. 2025-12-05T12:00:00)
 }
 
+export interface UpdateMyDietItemRequest {
+  foodId: number;
+  name: string;
+  amount: number;
+  unit: string; // "g"
+}
+
+export interface UpdateMyDietRequest {
+  date: string; // YYYY-MM-DD
+  timeSlot: DietTimeSlot;
+  items: UpdateMyDietItemRequest[];
+  memo?: string;
+}
+
+export interface UpdateMyDietItemResponse {
+  dietItemId: number;
+  foodId: number;
+  name: string;
+  amount: number;
+  unit: string;
+  calories: number;
+}
+
+export interface UpdateMyDietResponse {
+  dietId: number;
+  date: string; // YYYY-MM-DD
+  timeSlot: DietTimeSlot;
+  memo?: string;
+  totalCalories: number;
+  items: UpdateMyDietItemResponse[];
+  updatedAt: string; // ISO string (e.g. 2025-12-05T12:10:00)
+}
+
 export default {
   // Diet
   getDailyDiet: (date: string) => api.get(`/diets?date=${date}`),
@@ -66,6 +99,13 @@ export default {
    * DELETE /api/me/diets/{dietId}
    */
   deleteMyDiet: (dietId: number) => api.delete<DeleteMyDietResponse>(`/me/diets/${dietId}`),
+
+  /**
+   * 내 식단 한 건 수정
+   * PUT /api/me/diets/{dietId}
+   */
+  updateMyDiet: (dietId: number, data: UpdateMyDietRequest) => 
+    api.put<UpdateMyDietResponse>(`/me/diets/${dietId}`, data),
 
   // Foods
   /**

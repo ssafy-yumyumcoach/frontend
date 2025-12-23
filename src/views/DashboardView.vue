@@ -542,6 +542,18 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
                     </button>
                     <button
                       v-if="item.type === 'MEAL' && typeof item.id === 'number'"
+                      @click="
+                        router.push({
+                          path: '/meal-register',
+                          query: { mode: 'edit', dietId: item.id },
+                        })
+                      "
+                      class="text-sm text-zinc-400 hover:text-white transition-colors"
+                    >
+                      수정
+                    </button>
+                    <button
+                      v-if="item.type === 'MEAL' && typeof item.id === 'number'"
                       @click="handleDeleteDiet(item.id)"
                       :disabled="dietStore.isDeleting"
                       class="text-sm text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-50"
