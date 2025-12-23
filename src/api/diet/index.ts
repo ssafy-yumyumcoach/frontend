@@ -44,6 +44,12 @@ export interface CreateMyDietRequest {
 // 백엔드 응답은 ResponseEntity<Long> 형태로 보임(식단 기록 ID)
 export type CreateMyDietResponse = number;
 
+export interface DeleteMyDietResponse {
+  dietId: number;
+  deleted: boolean;
+  deletedAt: string; // ISO string (e.g. 2025-12-05T12:00:00)
+}
+
 export default {
   // Diet
   getDailyDiet: (date: string) => api.get(`/diets?date=${date}`),
@@ -54,6 +60,12 @@ export default {
    * POST /api/me/diets
    */
   createMyDiet: (data: CreateMyDietRequest) => api.post<CreateMyDietResponse>(`/me/diets`, data),
+
+  /**
+   * 내 식단 한 건 삭제
+   * DELETE /api/me/diets/{dietId}
+   */
+  deleteMyDiet: (dietId: number) => api.delete<DeleteMyDietResponse>(`/me/diets/${dietId}`),
 
   // Foods
   /**
