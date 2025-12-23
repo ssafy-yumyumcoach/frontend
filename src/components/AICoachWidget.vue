@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, nextTick } from "vue";
-import { Send, Sparkles, User, Bot, X, MessageCircle } from "lucide-vue-next";
+import { Send, Sparkles, User, Bot, X } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
+import chatbotApi, { type ChatMessage } from "@/api/aichatbot";
 
 interface Message {
   id: string;
@@ -11,15 +12,8 @@ interface Message {
 }
 
 const isOpen = ref(false);
-const messages = ref<Message[]>([
-  {
-    id: "1",
-    role: "assistant",
-    content: "안녕하세요! 냠냠코치 AI입니다. 식단이나 운동에 대해 궁금한 점이 있으신가요?",
-    timestamp: new Date(),
-  },
-]);
-
+const messages = ref<Message[]>([]);
+const conversationId = ref<string | number | null>(null);
 const userInput = ref("");
 const isTyping = ref(false);
 const chatContainer = ref<HTMLElement | null>(null);
@@ -28,6 +22,10 @@ const toggleChat = () => {
   isOpen.value = !isOpen.value;
   if (isOpen.value) {
     scrollToBottom();
+    // 처음 열릴 때 대화 ID가 없으면 초기화 시도
+    if (!conversationId.value && messages.value.length === 0) {
+        initializeChat();
+    }
   }
 };
 
@@ -38,34 +36,140 @@ const scrollToBottom = async () => {
   }
 };
 
-const sendMessage = async () => {
-  if (!userInput.value.trim()) return;
+const SESSION_KEY = "chat_conversation_id";
+const JOB_SESSION_KEY = "chat_active_job_id";
 
-  // Add user message
+const initializeChat = async () => {
+  try {
+    isTyping.value = true;
+    const storedId = sessionStorage.getItem(SESSION_KEY);
+
+    if (storedId) {
+      // 1. 기존 대화 복구
+      conversationId.value = storedId;
+      const res = await chatbotApi.getConversationMessages(storedId);
+      if (res.messages && res.messages.length > 0) {
+        messages.value = res.messages.map((msg: ChatMessage) => ({
+          id: String(msg.messageId),
+          role: msg.role === "ASSISTANT" ? "assistant" : "user",
+          content: msg.content,
+          timestamp: new Date(msg.createdAt),
+        }));
+      }
+    } else {
+      // 2. 새 대화 시작 (Greeting)
+      const res = await chatbotApi.createGreetingConversation();
+      if (res && res.conversationId) {
+        conversationId.value = res.conversationId;
+        sessionStorage.setItem(SESSION_KEY, String(res.conversationId));
+
+        if (res.assistantMessage) {
+          const msg = res.assistantMessage;
+          messages.value.push({
+            id: String(msg.messageId),
+            role: "assistant", // Greeting is always assistant
+            content: msg.content,
+            timestamp: new Date(msg.createdAt),
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Failed to initialize chat:", error);
+    // 에러 시 세션 스토리지 클리어 고려 (잘못된 ID일 수 있음)
+    // sessionStorage.removeItem(SESSION_KEY);
+  } finally {
+    isTyping.value = false;
+    scrollToBottom();
+  }
+};
+
+// Job 상태 폴링
+const pollJobStatus = async (jobId: string) => {
+  const POLLING_INTERVAL = 1000; // 1초
+  const MAX_ATTEMPTS = 60; // 최대 60초 대기
+
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    try {
+      const res = await chatbotApi.getJobStatus(jobId);
+      if (res.status === "COMPLETED") {
+        return res; // 성공 시 전체 응답 반환 (content 포함)
+      } else if (res.status === "FAILED") {
+        throw new Error(res.errorMessage || "Job failed");
+      }
+      // PENDING or PROCESSING: 계속 대기
+      await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL));
+    } catch (e) {
+      console.error("Polling error:", e);
+    }
+  }
+  throw new Error("Timeout awaiting job completion");
+};
+
+const sendMessage = async () => {
+  if (!userInput.value.trim() || !conversationId.value) return;
+
+  const content = userInput.value;
+  userInput.value = "";
+
+  // 1. 유저 메시지 즉시 표시
   const userMsg: Message = {
-    id: Date.now().toString(),
+    id: `temp-${Date.now()}`,
     role: "user",
-    content: userInput.value,
+    content: content,
     timestamp: new Date(),
   };
   messages.value.push(userMsg);
-  userInput.value = "";
   scrollToBottom();
 
-  // Simulate AI response
   isTyping.value = true;
-  setTimeout(() => {
-    isTyping.value = false;
-    const aiMsg: Message = {
-      id: (Date.now() + 1).toString(),
+
+  try {
+    // 2. 질문 생성 및 Job 발행
+    const res = await chatbotApi.createChatJob(content, Number(conversationId.value));
+    const jobId = String(res.jobId);
+    
+    // 세션 스토리지에 Job ID 저장 (새로고침 시 복구용)
+    sessionStorage.setItem(JOB_SESSION_KEY, jobId);
+
+    // 3. Job 상태 폴링 (완료 시 응답 받음)
+    const jobResult = await pollJobStatus(jobId);
+
+    // 4. 완료 시 응답 메시지 바로 표시 (추가 조회 불필요)
+    if (jobResult && jobResult.content) {
+      messages.value.push({
+        id: String(jobResult.assistantMessageId || Date.now()),
+        role: "assistant",
+        content: jobResult.content,
+        timestamp: new Date(), // API에 생성 시각이 있다면 사용, 없으면 현재
+      });
+    } else {
+        // 만약 content가 없다면(드물겠지만) 전체 조회로 폴백
+        const convRes = await chatbotApi.getConversationMessages(Number(conversationId.value));
+        const lastMsg = convRes.messages[convRes.messages.length - 1];
+        if (lastMsg && lastMsg.role === 'ASSISTANT') {
+             messages.value.push({
+                id: String(lastMsg.messageId),
+                role: "assistant",
+                content: lastMsg.content,
+                timestamp: new Date(lastMsg.createdAt)
+             });
+        }
+    }
+
+  } catch (error) {
+    console.error("Chat error:", error);
+    messages.value.push({
+      id: `err-${Date.now()}`,
       role: "assistant",
-      content:
-        "좋은 질문이네요! 현재 식단 기록을 분석해보면 단백질 섭취는 충분하지만, 수분 섭취가 조금 부족해 보입니다. 물을 하루 2L 이상 마시는 것을 목표로 해보시는 건 어떨까요?",
+      content: "죄송합니다. 답변을 생성하는 중에 오류가 발생했어요.",
       timestamp: new Date(),
-    };
-    messages.value.push(aiMsg);
+    });
+  } finally {
+    isTyping.value = false;
+    sessionStorage.removeItem(JOB_SESSION_KEY); // 완료 후 삭제
     scrollToBottom();
-  }, 1500);
+  }
 };
 
 const formatTime = (date: Date) => {
@@ -75,6 +179,11 @@ const formatTime = (date: Date) => {
     hour12: true,
   }).format(date);
 };
+
+// 컴포넌트 마운트 시에는 자동 실행 하지 않고, 사용자가 위젯을 열었을 때 실행하도록 변경 (또는 항상 미리 로드)
+// onMounted(() => {
+//   initializeChat();
+// });
 </script>
 
 <template>
