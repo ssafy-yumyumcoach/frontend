@@ -12,50 +12,51 @@ const challenges = ref<ChallengeSummary[]>([]);
 const isLoading = ref(false);
 
 const today = new Date();
-const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+  today.getDate()
+).padStart(2, "0")}`;
 
 const fetchChallenges = async () => {
-    isLoading.value = true;
-    try {
-        const currentMonth = todayStr.substring(0, 7); // YYYY-MM
-        
-        // Calculate next month
-        const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-        const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
+  isLoading.value = true;
+  try {
+    const currentMonth = todayStr.substring(0, 7); // YYYY-MM
 
-        const [resCurrent, resNext] = await Promise.all([
-            challengeApi.getChallenges(currentMonth),
-            challengeApi.getChallenges(nextMonth)
-        ]);
+    // Calculate next month
+    const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
 
-        const merged = [...resCurrent.data.challenges, ...resNext.data.challenges];
-        
-        // Remove duplicates if any (based on challengeId)
-        const unique = merged.filter((c, index, self) => 
-            index === self.findIndex((t) => t.challengeId === c.challengeId)
-        );
-        
-        console.log("Merged API Response:", unique);
-        challenges.value = unique;
-    } catch (error) {
-        console.error("Failed to fetch challenges:", error);
-        alert("챌린지 목록을 불러오는데 실패했습니다.");
-    } finally {
-        isLoading.value = false;
-    }
+    const [resCurrent, resNext] = await Promise.all([
+      challengeApi.getChallenges(currentMonth),
+      challengeApi.getChallenges(nextMonth),
+    ]);
+
+    const merged = [...resCurrent.data.challenges, ...resNext.data.challenges];
+
+    // Remove duplicates if any (based on challengeId)
+    const unique = merged.filter((c, index, self) => index === self.findIndex((t) => t.challengeId === c.challengeId));
+
+    console.log("Merged API Response:", unique);
+    challenges.value = unique;
+  } catch (error) {
+    console.error("Failed to fetch challenges:", error);
+    alert("챌린지 목록을 불러오는데 실패했습니다.");
+  } finally {
+    isLoading.value = false;
+  }
 };
 
 onMounted(() => {
-    fetchChallenges();
+  fetchChallenges();
 });
 
 const filteredChallenges = computed(() => {
   if (activeTab.value === "joined") {
-    return challenges.value.filter((c) => c.isJoined);
+    // Exclude 'PRE_REGISTRATION' (Joined but not started yet)
+    return challenges.value.filter((c) => c.isJoined && c.startDate <= todayStr);
   } else if (activeTab.value === "recruiting") {
     // Show challenges that are currently recruiting OR upcoming (not ended yet)
     return challenges.value.filter((c) => {
-        return c.recruitEndDate >= todayStr; 
+      return c.recruitEndDate >= todayStr;
     });
   }
   return challenges.value;
@@ -63,16 +64,16 @@ const filteredChallenges = computed(() => {
 
 const handleJoinToggle = async (challengeId: number, isJoined?: boolean) => {
   if (isJoined) {
-      // If already joined, maybe confirm leave or just go to detail
-      // User requested "Join/Leave" endpoints, let's keep leave here for convenience if desired,
-      // BUT typically leaving is a significant action detailed in detail page.
-      // Let's just navigate to detail for both for consistency, 
-      // OR keep leave here but "Join" MUST go to detail.
-      // Let's redirect to detail for better UX and difficulty selection.
-      router.push(`/challenge-detail/${challengeId}`);
+    // If already joined, maybe confirm leave or just go to detail
+    // User requested "Join/Leave" endpoints, let's keep leave here for convenience if desired,
+    // BUT typically leaving is a significant action detailed in detail page.
+    // Let's just navigate to detail for both for consistency,
+    // OR keep leave here but "Join" MUST go to detail.
+    // Let's redirect to detail for better UX and difficulty selection.
+    router.push(`/challenge-detail/${challengeId}`);
   } else {
-      // Must go to detail to select difficulty
-      router.push(`/challenge-detail/${challengeId}`);
+    // Must go to detail to select difficulty
+    router.push(`/challenge-detail/${challengeId}`);
   }
 };
 
@@ -101,12 +102,10 @@ const navigateToDetail = (challengeId: number) => {
     </div>
 
     <!-- 챌린지 그리드 -->
-    <div v-if="isLoading" class="text-center py-20 text-zinc-500">
-        로딩 중...
-    </div>
-    
+    <div v-if="isLoading" class="text-center py-20 text-zinc-500">로딩 중...</div>
+
     <div v-else-if="filteredChallenges.length === 0" class="text-center py-20 text-zinc-500">
-        {{ activeTab === 'recruiting' ? '현재 모집 중인 챌린지가 없습니다.' : '참여 중인 챌린지가 없습니다.' }}
+      {{ activeTab === "recruiting" ? "현재 모집 중인 챌린지가 없습니다." : "참여 중인 챌린지가 없습니다." }}
     </div>
 
     <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -122,7 +121,6 @@ const navigateToDetail = (challengeId: number) => {
 
         <!-- 내용 -->
         <div class="p-5 space-y-4">
-          
           <!-- 제목 -->
           <h3 class="text-xl text-white font-semibold">
             {{ challenge.title }}
@@ -135,24 +133,27 @@ const navigateToDetail = (challengeId: number) => {
 
           <!-- 기간 -->
           <div class="space-y-1">
-              <div class="flex items-center gap-2 text-zinc-500 text-sm">
-                <Calendar class="w-4 h-4" />
-                <span>진행: {{ challenge.startDate }} ~ {{ challenge.endDate }}</span>
-              </div>
-              <div class="flex items-center gap-2 text-zinc-500 text-sm">
-                <Calendar class="w-4 h-4 text-emerald-500" />
-                <span class="text-emerald-500">모집: {{ challenge.recruitStartDate }} ~ {{ challenge.recruitEndDate }}</span>
-              </div>
+            <div class="flex items-center gap-2 text-zinc-500 text-sm">
+              <Calendar class="w-4 h-4" />
+              <span>진행: {{ challenge.startDate }} ~ {{ challenge.endDate }}</span>
+            </div>
+            <div class="flex items-center gap-2 text-zinc-500 text-sm">
+              <Calendar class="w-4 h-4 text-emerald-500" />
+              <span class="text-emerald-500"
+                >모집: {{ challenge.recruitStartDate }} ~ {{ challenge.recruitEndDate }}</span
+              >
+            </div>
           </div>
 
           <!-- 참여자 수 -->
-          <div class="text-sm text-zinc-400">
-              참여자 {{ challenge.participantsCount }}명
-          </div>
+          <div class="text-sm text-zinc-400">참여자 {{ challenge.participantsCount }}명</div>
 
           <!-- Progress Bar for Joined Challenges (Optional based on design, but data is available) -->
-          <div v-if="challenge.isJoined && challenge.progressPercentage !== null" class="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mt-1">
-              <div class="h-full bg-emerald-500" :style="{ width: `${challenge.progressPercentage}%` }"></div>
+          <div
+            v-if="challenge.isJoined && challenge.progressPercentage !== null"
+            class="w-full h-1 bg-zinc-800 rounded-full overflow-hidden mt-1"
+          >
+            <div class="h-full bg-emerald-500" :style="{ width: `${challenge.progressPercentage}%` }"></div>
           </div>
 
           <!-- 버튼 -->
@@ -175,7 +176,7 @@ const navigateToDetail = (challengeId: number) => {
             <Button
               v-else
               @click="handleJoinToggle(challenge.challengeId, challenge.isJoined)"
-               variant="outline"
+              variant="outline"
               class="flex-1 border-zinc-700 text-zinc-400 hover:bg-zinc-800"
             >
               참여 중

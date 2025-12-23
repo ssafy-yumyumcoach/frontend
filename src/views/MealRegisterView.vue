@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { Upload, Trash2, X } from "lucide-vue-next";
+import { Upload, Trash2, X, Calendar, Clock } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
@@ -14,12 +14,30 @@ import Textarea from "@/components/ui/Textarea.vue";
 import { type UpdateMyDietItemRequest, type DietTimeSlot } from "@/api/diet";
 
 const router = useRouter();
+const dateInputRef = ref<HTMLInputElement | null>(null);
+const timeInputRef = ref<HTMLInputElement | null>(null);
+
+const openDatePicker = () => {
+  try {
+    dateInputRef.value?.showPicker();
+  } catch (e) {
+    dateInputRef.value?.click();
+  }
+};
+
+const openTimePicker = () => {
+  try {
+    timeInputRef.value?.showPicker();
+  } catch (e) {
+    timeInputRef.value?.click();
+  }
+};
 const route = useRoute();
 const foodsStore = useFoodsStore();
 const dietStore = useDietStore();
 
 // Edit mode
-const isEditMode = computed(() => route.query.mode === 'edit' && route.query.dietId);
+const isEditMode = computed(() => route.query.mode === "edit" && route.query.dietId);
 const editDietId = computed(() => {
   const dietId = route.query.dietId;
   return dietId ? Number(dietId) : null;
@@ -51,7 +69,6 @@ const selectedMealType = ref("lunch");
 const hasPhoto = ref(false);
 const uploadedPhotoUrl = ref("");
 const foods = ref<FoodItem[]>([]);
-const memo = ref("");
 
 // Foods Catalog (GET /api/foods)
 const catalogKeyword = ref("");
@@ -215,46 +232,41 @@ const loadDietForEdit = async () => {
     // createdAt에서 시간 추출
     if (diet.createdAt) {
       const dateTime = new Date(diet.createdAt);
-      const hours = String(dateTime.getHours()).padStart(2, '0');
-      const minutes = String(dateTime.getMinutes()).padStart(2, '0');
+      const hours = String(dateTime.getHours()).padStart(2, "0");
+      const minutes = String(dateTime.getMinutes()).padStart(2, "0");
       selectedTime.value = `${hours}:${minutes}`;
     } else {
       // createdAt이 없으면 timeSlot에 따라 기본 시간 설정
       switch (diet.timeSlot) {
-        case 'BREAKFAST':
-          selectedTime.value = '08:00';
+        case "BREAKFAST":
+          selectedTime.value = "08:00";
           break;
-        case 'LUNCH':
-          selectedTime.value = '12:30';
+        case "LUNCH":
+          selectedTime.value = "12:30";
           break;
-        case 'DINNER':
-          selectedTime.value = '19:00';
+        case "DINNER":
+          selectedTime.value = "19:00";
           break;
-        case 'SNACK':
-          selectedTime.value = '15:00';
+        case "SNACK":
+          selectedTime.value = "15:00";
           break;
       }
     }
 
     // 식사 타입 설정
     switch (diet.timeSlot) {
-      case 'BREAKFAST':
-        selectedMealType.value = 'breakfast';
+      case "BREAKFAST":
+        selectedMealType.value = "breakfast";
         break;
-      case 'LUNCH':
-        selectedMealType.value = 'lunch';
+      case "LUNCH":
+        selectedMealType.value = "lunch";
         break;
-      case 'DINNER':
-        selectedMealType.value = 'dinner';
+      case "DINNER":
+        selectedMealType.value = "dinner";
         break;
-      case 'SNACK':
-        selectedMealType.value = 'snack';
+      case "SNACK":
+        selectedMealType.value = "snack";
         break;
-    }
-
-    // 메모 설정
-    if (diet.memo) {
-      memo.value = diet.memo;
     }
 
     // 음식 목록 설정
@@ -317,7 +329,7 @@ const loadDietForEdit = async () => {
       );
     }
   } catch (e: any) {
-    console.error('Failed to load diet for edit', e);
+    console.error("Failed to load diet for edit", e);
     saveErrorMessage.value = dietStore.errorMessage || "식단 정보를 불러오는데 실패했습니다.";
   }
 };
@@ -612,12 +624,32 @@ const handleSave = async () => {
     <div class="flex flex-col lg:flex-row lg:items-center justify-end gap-4">
       <div class="flex flex-wrap items-center gap-2">
         <!-- 날짜 선택 -->
-        <div class="relative">
-          <Input type="date" v-model="selectedDate" class="w-[150px] bg-zinc-900 border-zinc-800 text-white text-sm" />
+        <div class="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 w-[150px]">
+          <span class="text-white text-sm flex-1">{{ selectedDate }}</span>
+          <button @click="openDatePicker" class="text-white hover:text-emerald-400 transition-colors">
+            <Calendar class="w-4 h-4" />
+          </button>
+          <input
+            ref="dateInputRef"
+            type="date"
+            v-model="selectedDate"
+            class="absolute inset-0 opacity-0 pointer-events-none"
+          />
         </div>
 
         <!-- 시간 선택 -->
-        <Input type="time" v-model="selectedTime" class="w-[110px] bg-zinc-900 border-zinc-800 text-white text-sm" />
+        <div class="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 w-[120px]">
+          <span class="text-white text-sm flex-1">{{ selectedTime }}</span>
+          <button @click="openTimePicker" class="text-white hover:text-emerald-400 transition-colors">
+            <Clock class="w-4 h-4" />
+          </button>
+          <input
+            ref="timeInputRef"
+            type="time"
+            v-model="selectedTime"
+            class="absolute inset-0 opacity-0 pointer-events-none"
+          />
+        </div>
 
         <!-- 끼니 선택 -->
         <ToggleGroup v-model="selectedMealType" :options="mealTypeOptions" class="h-10" />
@@ -852,11 +884,6 @@ const handleSave = async () => {
             </p>
           </div>
 
-          <div class="space-y-2 pt-2">
-            <p class="text-sm text-zinc-400">메모 (선택)</p>
-            <Textarea v-model="memo" placeholder="운동 전 아침 식사" :rows="3" />
-          </div>
-
           <p v-if="saveErrorMessage || dietStore.errorMessage" class="text-sm text-red-400">
             {{ saveErrorMessage || dietStore.errorMessage }}
           </p>
@@ -879,9 +906,9 @@ const handleSave = async () => {
             :disabled="dietStore.isCreating || dietStore.isUpdating"
           >
             <span v-if="dietStore.isCreating || dietStore.isUpdating">
-              {{ isEditMode ? '수정 중...' : '저장 중...' }}
+              {{ isEditMode ? "수정 중..." : "저장 중..." }}
             </span>
-            <span v-else>{{ isEditMode ? '수정하기' : '이 식단으로 기록하기' }}</span>
+            <span v-else>{{ isEditMode ? "수정하기" : "이 식단으로 기록하기" }}</span>
           </Button>
         </div>
       </div>
