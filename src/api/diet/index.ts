@@ -40,6 +40,7 @@ export interface CreateMyDietRequest {
   recordedAt: string; // ISO datetime 형식 (e.g. "2025-12-01T00:00:00")
   mealType: DietTimeSlot; // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
   items: CreateMyDietItemRequest[];
+  imageUrl?: string;
 }
 
 // 백엔드 응답은 ResponseEntity<Long> 형태로 보임(식단 기록 ID)
@@ -61,6 +62,7 @@ export interface UpdateMyDietRequest {
   recordedAt: string;
   mealType: DietTimeSlot;
   items: UpdateMyDietItemRequest[];
+  imageUrl?: string;
 }
 
 export interface UpdateMyDietItemResponse {
@@ -96,6 +98,7 @@ export interface MyDiet {
   timeSlot: DietTimeSlot;
   totalCalories: number;
   items: MyDietItem[];
+  imageUrl?: string;
 }
 
 export interface GetMyDietsResponse {

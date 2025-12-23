@@ -10,8 +10,10 @@ import ToggleGroup from "@/components/ui/ToggleGroup.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
-import { type UpdateMyDietItemRequest, type DietTimeSlot } from "@/api/diet";
+import { type UpdateMyDietItemRequest, type DietTimeSlot, type CreateMyDietRequest, type UpdateMyDietRequest } from "@/api/diet";
 import statsApi from "@/api/stats";
+import detectionApi, { type DetectionResult } from "@/api/detection";
+import imageApi from "@/api/image/index";
 
 const router = useRouter();
 const dateInputRef = ref<HTMLInputElement | null>(null);
@@ -59,13 +61,29 @@ interface FoodItem {
   baseCarbs: number; // 100g 기준 기본 탄수화물
   baseProtein: number; // 100g 기준 기본 단백질
   baseFat: number; // 100g 기준 기본 지방
-  manualInput: boolean;
+
 }
 
 // State
 const selectedDate = ref(new Date().toISOString().split("T")[0]);
-const selectedTime = ref("12:30");
-const selectedMealType = ref("lunch");
+const selectedTime = ref(new Date().toTimeString().slice(0, 5));
+
+const getMealTypeFromTime = (time: string) => {
+  const hour = parseInt(time.split(":")[0], 10);
+  if (hour >= 5 && hour < 11) return "breakfast";
+  if (hour >= 11 && hour < 16) return "lunch";
+  if (hour >= 16 && hour < 22) return "dinner";
+  return "snack";
+};
+
+const selectedMealType = ref(getMealTypeFromTime(selectedTime.value));
+
+// 사용자가 시간을 변경하면 끼니 종류도 자동으로 추천 (수정 모드가 아닐 때만)
+watch(selectedTime, (newTime) => {
+  if (!isEditMode.value) {
+    selectedMealType.value = getMealTypeFromTime(newTime);
+  }
+});
 const hasPhoto = ref(false);
 const uploadedPhotoUrl = ref("");
 const foods = ref<FoodItem[]>([]);
@@ -256,6 +274,10 @@ const loadDietForEdit = async () => {
           let baseCarbs = 0;
           let baseProtein = 0;
           let baseFat = 0;
+          
+          // 음식 이름 초기화 (fallback 처리)
+          // 백엔드 응답에 따라 item.name 또는 item.foodName에 값이 있을 수 있음
+          let foodName = item.name || (item as any).foodName || "";
 
           // foodId가 있으면 상세 정보 조회하여 기본값 설정
           if (item.foodId) {
@@ -265,6 +287,9 @@ const loadDietForEdit = async () => {
               baseCarbs = foodDetail.carbohydrate;
               baseProtein = foodDetail.protein;
               baseFat = foodDetail.fat;
+              
+              // 최신 음식 이름으로 업데이트 (DB 기준)
+              foodName = foodDetail.name;
             } catch (e) {
               // 조회 실패 시 저장된 calories를 100g 기준으로 가정
               baseCalories = item.calories || 0;
@@ -289,7 +314,7 @@ const loadDietForEdit = async () => {
           return {
             id: `edit-${item.dietItemId || idx}`,
             foodId: item.foodId || null,
-            name: item.name || "",
+            name: foodName,
             checked: true,
             amount: amount,
             unit: "g" as const,
@@ -301,7 +326,6 @@ const loadDietForEdit = async () => {
             baseCarbs: baseCarbs,
             baseProtein: baseProtein,
             baseFat: baseFat,
-            manualInput: false,
           };
         })
       );
@@ -335,69 +359,124 @@ onUnmounted(() => {
   }
 });
 
-const handlePhotoUpload = () => {
-  hasPhoto.value = true;
-  uploadedPhotoUrl.value = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c";
 
-  // 100g 기준 기본 영양 정보를 저장하고, amount에 비례하여 계산
-  foods.value = [
-    {
-      id: "1",
-      foodId: null,
-      name: "밥",
-      checked: true,
-      amount: 150,
-      unit: "g",
-      baseCalories: 167, // 100g 기준 (250 * 100 / 150)
-      baseCarbs: 30, // 100g 기준 (45 * 100 / 150)
-      baseProtein: 2.7, // 100g 기준 (4 * 100 / 150)
-      baseFat: 0.7, // 100g 기준 (1 * 100 / 150)
-      calories: 250, // 150g 기준 계산값
-      carbs: 45,
-      protein: 4,
-      fat: 1,
-      manualInput: false,
-    },
-    {
-      id: "2",
-      foodId: null,
-      name: "치킨 샐러드",
-      checked: true,
-      amount: 200,
-      unit: "g",
-      baseCalories: 160, // 100g 기준 (320 * 100 / 200)
-      baseCarbs: 12.5, // 100g 기준 (25 * 100 / 200)
-      baseProtein: 10, // 100g 기준 (20 * 100 / 200)
-      baseFat: 7.5, // 100g 기준 (15 * 100 / 200)
-      calories: 320, // 200g 기준 계산값
-      carbs: 25,
-      protein: 20,
-      fat: 15,
-      manualInput: false,
-    },
-    {
-      id: "3",
-      foodId: null,
-      name: "고구마",
-      checked: true,
-      amount: 100,
-      unit: "g",
-      baseCalories: 110, // 100g 기준
-      baseCarbs: 10, // 100g 기준
-      baseProtein: 6, // 100g 기준
-      baseFat: 4, // 100g 기준
-      calories: 110, // 100g 기준 계산값
-      carbs: 10,
-      protein: 6,
-      fat: 4,
-      manualInput: false,
-    },
-  ];
+
+// State
+const isAnalyzing = ref(false);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const selectedImageFile = ref<File | null>(null);
+
+// ... existing code ...
+
+const handlePhotoUpload = () => {
+  fileInputRef.value?.click();
+};
+
+const handleFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0) return;
+
+  const file = input.files[0];
+  
+  // Validate file type
+  if (!file.type.startsWith("image/")) {
+    alert("이미지 파일만 업로드할 수 있습니다.");
+    return;
+  }
+
+  // Save for upload later
+  selectedImageFile.value = file;
+
+  // Local preview
+  if (uploadedPhotoUrl.value) {
+    URL.revokeObjectURL(uploadedPhotoUrl.value);
+  }
+  uploadedPhotoUrl.value = URL.createObjectURL(file);
+  hasPhoto.value = true;
+
+  // Analyze
+  isAnalyzing.value = true;
+  foods.value = []; // Reset existing
+
+  try {
+    const response = await detectionApi.detectImage(file);
+    
+    if (response.results && response.results.length > 0) {
+      const newFoods: FoodItem[] = [];
+      
+      // Process each detected food
+      for (const result of response.results) {
+        const label = result.label;
+        let foodData = {
+           name: label,
+           calories: 100, // Default fallback
+           carbs: 20,
+           protein: 5,
+           fat: 1,
+           foodId: null as number | null
+        };
+
+        try {
+            // Search API for real nutrition data
+            const searchResults = await foodsStore.fetchFoods({ keyword: label });
+            
+            // If we have results, use the first one (assuming best match)
+            if (searchResults && searchResults.length > 0) {
+                const matched = searchResults[0];
+                foodData = {
+                    name: matched.name,
+                    calories: matched.calories,
+                    carbs: matched.carbohydrate,
+                    protein: matched.protein,
+                    fat: matched.fat,
+                    foodId: matched.id
+                };
+            }
+        } catch(e) {
+            console.warn(`Failed to fetch nutrition for ${label}, using defaults.`);
+        }
+
+        newFoods.push({
+            id: `k-${Date.now()}-${result.class_id}-${Math.random()}`, // Ensure unique ID
+            foodId: foodData.foodId,
+            name: foodData.name,
+            checked: true,
+            amount: 100, // Default 1 serving
+            unit: 'g',
+            baseCalories: foodData.calories,
+            baseCarbs: foodData.carbs,
+            baseProtein: foodData.protein,
+            baseFat: foodData.fat,
+            calories: foodData.calories,
+            carbs: foodData.carbs,
+            protein: foodData.protein,
+            fat: foodData.fat
+        });
+      }
+      
+      foods.value = newFoods;
+    } else {
+      alert("음식을 찾을 수 없어요. 직접 검색해서 추가해주세요.");
+    }
+
+  } catch (error) {
+    console.error("Detection failed:", error);
+    alert("사진 분석에 실패했습니다. 다시 시도하거나 직접 입력해주세요.");
+    hasPhoto.value = false;
+    uploadedPhotoUrl.value = "";
+  } finally {
+    isAnalyzing.value = false;
+    // Reset input so same file can be selected again
+    input.value = ""; 
+  }
 };
 
 const handlePhotoDelete = () => {
   hasPhoto.value = false;
-  uploadedPhotoUrl.value = "";
+  if (uploadedPhotoUrl.value) {
+    URL.revokeObjectURL(uploadedPhotoUrl.value);
+    uploadedPhotoUrl.value = "";
+  }
   foods.value = [];
 };
 
@@ -409,13 +488,11 @@ const calculateNutrition = (baseValue: number, amount: number): number => {
 
 // amount 변경 시 영양 정보 자동 계산
 const updateFoodNutrition = (food: FoodItem) => {
-  if (!food.manualInput) {
-    // 수동 입력이 아닌 경우에만 자동 계산
-    food.calories = calculateNutrition(food.baseCalories, food.amount);
-    food.carbs = calculateNutrition(food.baseCarbs, food.amount);
-    food.protein = calculateNutrition(food.baseProtein, food.amount);
-    food.fat = calculateNutrition(food.baseFat, food.amount);
-  }
+  // 수동 입력 제거로 인해 항상 자동 계산
+  food.calories = calculateNutrition(food.baseCalories, food.amount);
+  food.carbs = calculateNutrition(food.baseCarbs, food.amount);
+  food.protein = calculateNutrition(food.baseProtein, food.amount);
+  food.fat = calculateNutrition(food.baseFat, food.amount);
 };
 
 const handleToggleFood = (id: string) => {
@@ -427,10 +504,8 @@ const handleDeleteFood = (id: string) => {
   foods.value = foods.value.filter((f) => f.id !== id);
 };
 
-const handleToggleManualInput = (id: string) => {
-  const food = foods.value.find((f) => f.id === id);
-  if (food) food.manualInput = !food.manualInput;
-};
+// ... existing code ...
+
 
 const handleAddCatalogFood = async () => {
   if (!selectedCatalogFoodId.value) return;
@@ -464,7 +539,6 @@ const handleAddCatalogFood = async () => {
     baseCarbs: baseCarbs,
     baseProtein: baseProtein,
     baseFat: baseFat,
-    manualInput: false,
   });
 
   selectedCatalogFoodId.value = "";
@@ -523,37 +597,52 @@ const handleSave = async () => {
   }
 
   try {
+    let imageKey = "";
+
+    // 1. Upload new image if selected
+    if (selectedImageFile.value) {
+      try {
+        const key = await imageApi.uploadImage(selectedImageFile.value, "DIET");
+        imageKey = key;
+      } catch (e) {
+        console.error("Image upload failed", e);
+        saveErrorMessage.value = "사진 업로드에 실패했습니다. 사진 없이 저장하거나 다시 시도해주세요.";
+        return; 
+      }
+    } 
+
     if (isEditMode.value && editDietId.value) {
       // 수정 모드
       const updatePayload: UpdateMyDietItemRequest[] = selectedItems.map((f, index) => ({
         foodId: f.foodId!,
-        serveCount: f.amount,
+        serveCount: f.amount / 100, // 인분 단위로 변환 (100g = 1인분)
         orderIndex: index + 1,
       }));
 
-      // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성 (Spring Boot LocalDateTime 기본 형식)
+      // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성
       const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
 
-      const updatePayloadData = {
+      const updatePayloadData: UpdateMyDietRequest = {
         recordedAt: dateWithTime,
         mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: updatePayload,
+        imageUrl: imageKey || undefined
       };
 
       await dietStore.updateMyDiet(editDietId.value, updatePayloadData);
     } else {
-      // 생성 모드 - API 명세에 맞춘 형식
-      // date와 selectedTime을 합쳐서 ISO datetime 형식으로 생성 (Spring Boot LocalDateTime 기본 형식)
+      // 생성 모드
       const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
 
-      const payload = {
-        recordedAt: dateWithTime, // ISO datetime 형식 (e.g. "2025-12-05T08:30:00")
-        mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot, // "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK"
+      const payload: CreateMyDietRequest = {
+        recordedAt: dateWithTime, 
+        mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: selectedItems.map((f, index) => ({
-          foodId: f.foodId!, // 위에서 validation 했으므로 단언 가능
-          serveCount: f.amount,
+          foodId: f.foodId!,
+          serveCount: f.amount / 100, 
           orderIndex: index + 1,
         })),
+        imageUrl: imageKey || undefined
       };
 
       await dietStore.createMyDiet(payload);
@@ -613,6 +702,15 @@ const handleSave = async () => {
       <!-- 좌측 - 식단 사진 업로드 & 미리보기 -->
       <div class="space-y-4">
         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
+
+        <!-- Hidden File Input (Always present) -->
+        <input 
+          type="file" 
+          ref="fileInputRef" 
+          class="hidden" 
+          accept="image/*" 
+          @change="handleFileChange" 
+        />
           <div
             v-if="!hasPhoto"
             class="flex flex-col items-center justify-center py-16 space-y-4 border-2 border-dashed border-zinc-700 rounded-lg aspect-square"
@@ -622,14 +720,21 @@ const handleSave = async () => {
               식단 사진을 업로드하면,<br />
               AI가 음식과 영양 정보를 분석해줘요.
             </p>
-            <Button @click="handlePhotoUpload" class="bg-emerald-500 hover:bg-emerald-600 text-white">
-              <Upload class="w-4 h-4 mr-2" />
-              사진 업로드
+            <Button 
+              @click="handlePhotoUpload" 
+              class="bg-emerald-500 hover:bg-emerald-600 text-white"
+              :disabled="isAnalyzing"
+            >
+               <div class="flex items-center">
+                  <div v-if="isAnalyzing" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  <Upload v-else class="w-4 h-4 mr-2" />
+                  <span>{{ isAnalyzing ? '분석 중...' : '사진 업로드' }}</span>
+               </div>
             </Button>
           </div>
           <div v-else>
             <div class="relative aspect-square rounded-lg overflow-hidden bg-zinc-800">
-              <ImageWithFallback :src="uploadedPhotoUrl" alt="업로드된 식단 사진" class="w-full h-full object-cover" />
+              <ImageWithFallback :src="uploadedPhotoUrl" alt="업로드된 식단 사진" class="w-full h-full object-contain bg-zinc-950" />
 
               <!-- 버튼 오버레이 -->
               <div class="absolute top-4 right-4 flex gap-2">
@@ -739,22 +844,9 @@ const handleSave = async () => {
                     @update:checked="() => handleToggleFood(food.id)"
                   />
 
-                  <Input
-                    v-if="food.manualInput"
-                    v-model="food.name"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm flex-1 min-w-0"
-                    placeholder="음식 이름"
-                  />
-                  <label v-else :for="`food-${food.id}`" class="text-white cursor-pointer flex-1">
+                  <label :for="`food-${food.id}`" class="text-white cursor-pointer flex-1">
                     {{ food.name }}
                   </label>
-
-                  <span
-                    v-if="food.manualInput && !food.name"
-                    class="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded whitespace-nowrap"
-                  >
-                    수동 입력
-                  </span>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -777,51 +869,9 @@ const handleSave = async () => {
                 </div>
               </div>
 
-              <!-- 영양 정보 요약 (수동 입력 모드가 아닐 때만) -->
-              <div v-if="!food.manualInput" class="text-sm text-zinc-400">
+              <!-- 영양 정보 요약 -->
+              <div class="text-sm text-zinc-400">
                 {{ food.calories }} kcal · 탄 {{ food.carbs }}g · 단백질 {{ food.protein }}g · 지방 {{ food.fat }}g
-              </div>
-
-              <!-- 수동 입력 모드일 때: 입력 필드 -->
-              <div v-if="food.manualInput" class="grid grid-cols-2 gap-2 pt-1">
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">열량 (kcal)</label>
-                  <Input
-                    type="number"
-                    v-model="food.calories"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">탄수화물 (g)</label>
-                  <Input
-                    type="number"
-                    v-model="food.carbs"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">단백질 (g)</label>
-                  <Input
-                    type="number"
-                    v-model="food.protein"
-                    class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm"
-                  />
-                </div>
-                <div class="space-y-1">
-                  <label class="text-xs text-zinc-500">지방 (g)</label>
-                  <Input type="number" v-model="food.fat" class="h-8 bg-zinc-900 border-zinc-700 text-white text-sm" />
-                </div>
-              </div>
-
-              <!-- 하단: 영양 정보 직접 입력 버튼 -->
-              <div class="flex justify-end pt-1">
-                <button
-                  @click="handleToggleManualInput(food.id)"
-                  class="text-xs text-zinc-500 hover:text-white transition-colors"
-                >
-                  {{ food.manualInput ? "자동 입력으로 돌아가기" : "영양 정보 직접 입력하기" }}
-                </button>
               </div>
             </div>
           </div>

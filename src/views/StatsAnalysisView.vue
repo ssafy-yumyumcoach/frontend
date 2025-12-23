@@ -95,6 +95,8 @@ const rawExerciseStats = ref<any[]>([]);
 const weekRange = ref({ start: "", end: "" });
 const nutritionReview = ref<any>(null);
 const exerciseReview = ref<any>(null);
+const isNutritionReviewLoading = ref(false);
+const isExerciseReviewLoading = ref(false);
 
 // Data Check Helpers
 const hasDietData = computed(() => {
@@ -170,6 +172,17 @@ const fetchStats = async () => {
 
     // Handle Nutrition Review
     const handleNutritionReviewFetch = async () => {
+      // 1. Data Check: Do we have any diet data to analyze?
+      const hasAnyDietData = (rawDietStats.value || []).some((d: any) => 
+        Number(d.calories) > 0 || Number(d.carbs) > 0 || Number(d.protein) > 0 || Number(d.fat) > 0
+      );
+
+      if (!hasAnyDietData) {
+        nutritionReview.value = null;
+        isNutritionReviewLoading.value = false;
+        return;
+      }
+
       // Polling Logic
       let attempts = 0;
       const maxAttempts = 10;
@@ -204,8 +217,10 @@ const fetchStats = async () => {
       // Initial Check
       if (reviewRes.status === "fulfilled" && isNutritionReviewValid(reviewRes.value.data)) {
         nutritionReview.value = reviewRes.value.data;
+        isNutritionReviewLoading.value = false;
       } else {
-        nutritionReview.value = null; // Show loading state
+        nutritionReview.value = null; 
+        isNutritionReviewLoading.value = true; // Start loading state
 
         console.log("Starting polling for fresh nutrition review...");
         const interval = setInterval(async () => {
@@ -213,6 +228,7 @@ const fetchStats = async () => {
           const success = await poll();
           if (success || attempts >= maxAttempts) {
             clearInterval(interval);
+            isNutritionReviewLoading.value = false; // Stop loading state
             if (success) {
               console.log("Fresh nutrition review fetched via polling!");
             } else console.log("Nutrition Polling timed out.");
@@ -223,6 +239,17 @@ const fetchStats = async () => {
 
     // Handle Exercise Review
     const handleExerciseReviewFetch = async () => {
+      // 1. Data Check
+       const hasAnyExerciseData = (rawExerciseStats.value || []).some((d: any) => 
+        Number(d.durationMinutes) > 0 || Number(d.calories) > 0
+      );
+
+      if (!hasAnyExerciseData) {
+        exerciseReview.value = null;
+        isExerciseReviewLoading.value = false;
+        return;
+      }
+
       // Polling Logic
       let attempts = 0;
       const maxAttempts = 10;
@@ -259,8 +286,10 @@ const fetchStats = async () => {
       // If we have a result AND it counts as valid (newer than last update), use it.
       if (exReviewRes.status === "fulfilled" && isReviewValid(exReviewRes.value.data)) {
         exerciseReview.value = exReviewRes.value.data;
+        isExerciseReviewLoading.value = false;
       } else {
-        exerciseReview.value = null; // Show loading state because it's either missing or stale
+        exerciseReview.value = null; 
+        isExerciseReviewLoading.value = true; // Use explicit loading state
 
         // Start Polling
         console.log("Starting polling for fresh exercise review...");
@@ -269,6 +298,7 @@ const fetchStats = async () => {
           const success = await poll();
           if (success || attempts >= maxAttempts) {
             clearInterval(interval);
+            isExerciseReviewLoading.value = false; // Stop loading state
             if (success) {
               console.log("Fresh exercise review fetched via polling!");
             } else console.log("Polling timed out.");
@@ -431,7 +461,7 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
           </template>
 
           <!-- Case 2: Loading / Analyzing -->
-          <template v-else>
+          <template v-else-if="isNutritionReviewLoading">
             <div class="flex-1 flex flex-col items-center justify-center space-y-4 py-8">
               <Loader2 class="w-8 h-8 text-emerald-500 animate-spin" />
               <div class="text-center space-y-1">
@@ -439,6 +469,13 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
                 <p class="text-zinc-500 text-sm">잠시만 기다려주세요...</p>
               </div>
             </div>
+          </template>
+
+          <!-- Case 3: No Data or Analysis Failed -->
+          <template v-else>
+             <div class="flex-1 flex flex-col items-center justify-center space-y-2 py-8 text-zinc-500">
+               <p>분석할 데이터가 없거나 분석에 실패했습니다.</p>
+             </div>
           </template>
         </div>
 
@@ -484,7 +521,7 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
           </template>
 
           <!-- Case 2: Loading / Analyzing -->
-          <template v-else>
+          <template v-else-if="isExerciseReviewLoading">
             <div class="flex-1 flex flex-col items-center justify-center space-y-4 py-8">
               <Loader2 class="w-8 h-8 text-emerald-500 animate-spin" />
               <div class="text-center space-y-1">
@@ -492,6 +529,13 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
                 <p class="text-zinc-500 text-sm">잠시만 기다려주세요...</p>
               </div>
             </div>
+          </template>
+
+          <!-- Case 3: No Data or Analysis Failed -->
+          <template v-else>
+             <div class="flex-1 flex flex-col items-center justify-center space-y-2 py-8 text-zinc-500">
+               <p>분석할 데이터가 없거나 분석에 실패했습니다.</p>
+             </div>
           </template>
         </div>
       </div>

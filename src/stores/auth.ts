@@ -115,6 +115,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.removeItem('token');
             localStorage.removeItem('refreshToken');
             localStorage.removeItem('user');
+            sessionStorage.removeItem('chat_conversation_id');
             return false;
         }
     }
@@ -134,6 +135,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.removeItem('token');
             localStorage.removeItem('refreshToken');
             localStorage.removeItem('user');
+            sessionStorage.removeItem('chat_conversation_id');
         }
     }
 
@@ -170,6 +172,7 @@ export const useAuthStore = defineStore('auth', () => {
             localStorage.removeItem('token');
             localStorage.removeItem('refreshToken');
             localStorage.removeItem('user');
+            sessionStorage.removeItem('chat_conversation_id');
 
             return responseMessage;
         } catch (error: any) {
