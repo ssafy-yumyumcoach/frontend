@@ -108,32 +108,36 @@ const loadDietForEdit = async () => {
   if (!isEditMode.value || !editDietId.value) return;
 
   try {
-    // getMyDiets로 전체 목록을 가져와서 해당 dietId 찾기
-    const date = selectedDate.value;
-    const res = await dietStore.getMyDiets(date);
-    
-    const diet = res.diets.find((d) => d.dietId === editDietId.value);
-    
-    if (!diet) {
-      saveErrorMessage.value = "수정할 식단을 찾을 수 없습니다.";
-      return;
+    // getMyDietDetail로 상세 정보 가져오기
+    const diet = await dietStore.getMyDietDetail(editDietId.value);
+
+    // 날짜 설정
+    if (diet.date) {
+      selectedDate.value = diet.date;
     }
 
-    // 날짜는 이미 selectedDate에 설정되어 있음
-    // timeSlot에 따라 시간 설정 (대략적인 시간)
-    switch (diet.timeSlot) {
-      case 'BREAKFAST':
-        selectedTime.value = '08:00';
-        break;
-      case 'LUNCH':
-        selectedTime.value = '12:30';
-        break;
-      case 'DINNER':
-        selectedTime.value = '19:00';
-        break;
-      case 'SNACK':
-        selectedTime.value = '15:00';
-        break;
+    // createdAt에서 시간 추출
+    if (diet.createdAt) {
+      const dateTime = new Date(diet.createdAt);
+      const hours = String(dateTime.getHours()).padStart(2, '0');
+      const minutes = String(dateTime.getMinutes()).padStart(2, '0');
+      selectedTime.value = `${hours}:${minutes}`;
+    } else {
+      // createdAt이 없으면 timeSlot에 따라 기본 시간 설정
+      switch (diet.timeSlot) {
+        case 'BREAKFAST':
+          selectedTime.value = '08:00';
+          break;
+        case 'LUNCH':
+          selectedTime.value = '12:30';
+          break;
+        case 'DINNER':
+          selectedTime.value = '19:00';
+          break;
+        case 'SNACK':
+          selectedTime.value = '15:00';
+          break;
+      }
     }
 
     // 식사 타입 설정
@@ -152,6 +156,11 @@ const loadDietForEdit = async () => {
         break;
     }
 
+    // 메모 설정
+    if (diet.memo) {
+      memo.value = diet.memo;
+    }
+
     // 음식 목록 설정
     if (diet.items && Array.isArray(diet.items)) {
       foods.value = diet.items.map((item, idx: number) => ({
@@ -160,7 +169,7 @@ const loadDietForEdit = async () => {
         name: item.name || '',
         checked: true,
         amount: item.amount || 100,
-        unit: item.unit || 'g',
+        unit: 'g' as const,
         calories: item.calories || 0,
         carbs: 0, // 상세 정보가 없으면 0
         protein: 0,

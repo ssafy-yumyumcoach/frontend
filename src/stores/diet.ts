@@ -6,7 +6,8 @@ import dietApi, {
   type DeleteMyDietResponse,
   type UpdateMyDietRequest,
   type UpdateMyDietResponse,
-  type GetMyDietsResponse
+  type GetMyDietsResponse,
+  type GetMyDietDetailResponse
 } from "@/api/diet";
 import axios from "axios";
 
@@ -21,11 +22,13 @@ export const useDietStore = defineStore("diet", () => {
   const isDeleting = ref(false);
   const isUpdating = ref(false);
   const isLoadingDiets = ref(false);
+  const isLoadingDietDetail = ref(false);
   const errorMessage = ref<string>("");
   const lastCreatedDietId = ref<CreateMyDietResponse | null>(null);
   const lastDeletedDietId = ref<number | null>(null);
   const lastUpdatedDiet = ref<UpdateMyDietResponse | null>(null);
   const myDiets = ref<GetMyDietsResponse | null>(null);
+  const myDietDetail = ref<GetMyDietDetailResponse | null>(null);
 
   const clearError = () => {
     errorMessage.value = "";
@@ -153,20 +156,56 @@ export const useDietStore = defineStore("diet", () => {
     }
   };
 
+  const getMyDietDetail = async (dietId: number) => {
+    isLoadingDietDetail.value = true;
+    errorMessage.value = "";
+
+    try {
+      const response = await dietApi.getMyDietDetail(dietId);
+      myDietDetail.value = response.data;
+      return response.data;
+    } catch (error: unknown) {
+      let message = "식단 상세 정보를 불러오는데 실패했습니다.";
+
+      if (axios.isAxiosError(error) && error.response) {
+        const data = error.response.data as ApiErrorResponse | undefined;
+        const status = error.response.status;
+
+        if (status === 401) {
+          message = "액세스 토큰이 유효하지 않습니다.";
+        } else if (status === 403) {
+          message = "해당 식단에 접근할 권한이 없습니다.";
+        } else if (status === 404) {
+          message = "해당 식단을 찾을 수 없습니다.";
+        } else if (data?.message) {
+          message = data.message;
+        }
+      }
+
+      errorMessage.value = message;
+      throw new Error(message);
+    } finally {
+      isLoadingDietDetail.value = false;
+    }
+  };
+
   return {
     isCreating,
     isDeleting,
     isUpdating,
     isLoadingDiets,
+    isLoadingDietDetail,
     errorMessage,
     lastCreatedDietId,
     lastDeletedDietId,
     lastUpdatedDiet,
     myDiets,
+    myDietDetail,
     createMyDiet,
     deleteMyDiet,
     updateMyDiet,
     getMyDiets,
+    getMyDietDetail,
     clearError,
   };
 });

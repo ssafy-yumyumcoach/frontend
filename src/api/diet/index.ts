@@ -104,6 +104,17 @@ export interface GetMyDietsResponse {
   diets: MyDiet[];
 }
 
+export interface GetMyDietDetailResponse {
+  dietId: number;
+  date: string; // YYYY-MM-DD
+  timeSlot: DietTimeSlot;
+  memo?: string;
+  totalCalories: number;
+  items: MyDietItem[];
+  createdAt: string; // ISO string (e.g. 2025-12-05T08:30:00)
+  updatedAt: string; // ISO string (e.g. 2025-12-05T09:00:00)
+}
+
 export default {
   // Diet
   getDailyDiet: (date: string) => api.get(`/diets?date=${date}`),
@@ -134,6 +145,13 @@ export default {
    */
   getMyDiets: (date: string) => 
     api.get<GetMyDietsResponse>(`/me/diets`, { params: { date } }),
+
+  /**
+   * 내 특정 식단 한 건의 상세 내역 조회
+   * GET /api/me/diets/{dietId}
+   */
+  getMyDietDetail: (dietId: number) => 
+    api.get<GetMyDietDetailResponse>(`/me/diets/${dietId}`),
 
   // Foods
   /**
