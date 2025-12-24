@@ -121,8 +121,13 @@ const fetchMyPageData = async () => {
     let imgUrl = data.basic.profileImageUrl;
     // 기존 DB 데이터에 이중 도메인이 포함된 경우가 있어 클라이언트에서 임시로 처리
     const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
-    if (imgUrl && imgUrl.includes(cdnDomain + cdnDomain)) {
-      imgUrl = imgUrl.replace(cdnDomain + cdnDomain, cdnDomain);
+    if (imgUrl) {
+      if (imgUrl.includes(cdnDomain + cdnDomain)) {
+        imgUrl = imgUrl.replace(cdnDomain + cdnDomain, cdnDomain);
+      } else if (!imgUrl.startsWith("http")) {
+        const cleanKey = imgUrl.startsWith("/") ? imgUrl.slice(1) : imgUrl;
+        imgUrl = `${cdnDomain}${cleanKey}`;
+      }
     }
     profileImage.value = imgUrl;
 
@@ -488,7 +493,31 @@ const openFollowModal = async (type: "following" | "follower") => {
     } else {
       res = await userApi.getMyFollowers();
     }
-    followList.value = res.data.users;
+    const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
+
+    // Helper to sanitize URL
+    const sanitizeUrl = (url: string | null) => {
+      if (!url) return undefined;
+      // console.log('Raw profile URL:', url);
+
+      // 1. Handle double domain
+      if (url.includes(cdnDomain + cdnDomain)) {
+        return url.replace(cdnDomain + cdnDomain, cdnDomain);
+      }
+      // 2. Handle relative path (key only)
+      if (!url.startsWith("http")) {
+        // Ensure no leading slash if domain has trailing slash (it does)
+        // But if url starts with /, remove it
+        const cleanKey = url.startsWith("/") ? url.slice(1) : url;
+        return `${cdnDomain}${cleanKey}`;
+      }
+      return url;
+    };
+
+    followList.value = res.data.users.map((u: any) => ({
+      ...u,
+      profileImageUrl: sanitizeUrl(u.profileImageUrl),
+    }));
   } catch (e) {
     console.error(e);
     alert(`${followModalTitle.value}을 불러오지 못했습니다.`);
