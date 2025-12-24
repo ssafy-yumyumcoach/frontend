@@ -164,18 +164,7 @@ export default {
    * Authorization: Bearer {accessToken} (axios interceptor에서 자동 첨부)
    */
   getFoods: (params?: FoodListParams) => {
-    console.log("🌐 [dietApi] getFoods 호출, params:", params);
-    const result = api.get<FoodListResponse>(`/foods`, { params });
-    result.then(
-      (response) => {
-        console.log("🌐 [dietApi] getFoods 응답:", response);
-        console.log("🌐 [dietApi] response.data:", response.data);
-      },
-      (error) => {
-        console.error("🌐 [dietApi] getFoods 에러:", error);
-      }
-    );
-    return result;
+    return api.get<FoodListResponse>(`/foods`, { params });
   },
 
   /**

@@ -11,6 +11,7 @@ import Avatar from "@/components/ui/Avatar.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
 import userApi, { type Title as ApiTitle, type UserSummary } from "@/api/user";
 import imageApi from "@/api/image";
+import communityApi from "@/api/community"; // communityApi import added
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -50,6 +51,7 @@ const originalHealthInfo = ref<any>({});
 // Follow Stats
 const followersCount = ref(0);
 const followingsCount = ref(0);
+const myPostCount = ref(0); // Added myPostCount state
 
 // Health Info State
 const height = ref("");
@@ -200,6 +202,14 @@ const fetchMyPageData = async () => {
     // Follow
     followersCount.value = data.follow.followersCount;
     followingsCount.value = data.follow.followingsCount;
+
+    // My Posts Count
+    try {
+        const postRes = await communityApi.getMyPosts({ size: 1 }); // size 1 to minimize data
+        myPostCount.value = postRes.data.totalCount || 0;
+    } catch (e) {
+        console.error("Failed to fetch my posts count:", e);
+    }
   } catch (error) {
     console.error("Failed to fetch my page:", error);
     // alert("정보를 불러오는데 실패했습니다.");
@@ -647,23 +657,37 @@ const getDifficultyColor = (difficulty: string) => {
               </div>
               <div class="text-sm text-zinc-500">{{ email }}</div>
             </div>
-
-            <!-- 2. Follow Stats -->
-            <div class="flex items-center justify-center md:justify-start gap-6">
+            <!-- 2. Follow Stats & My Posts -->
+            <div class="flex items-center justify-center md:justify-start gap-3">
               <div
-                class="text-center cursor-pointer hover:text-white transition-colors"
+                class="text-center cursor-pointer hover:bg-zinc-800 rounded-lg py-2 px-4 transition-all"
                 @click="openFollowModal('follower')"
               >
                 <div class="text-white font-bold text-xl">{{ followersCount }}</div>
-                <div class="text-xs text-zinc-500">팔로워</div>
+                <div class="text-xs text-zinc-400">팔로워</div>
               </div>
+
+              <!-- Divider -->
               <div class="w-px h-8 bg-zinc-800"></div>
+
               <div
-                class="text-center cursor-pointer hover:text-white transition-colors"
+                class="text-center cursor-pointer hover:bg-zinc-800 rounded-lg py-2 px-4 transition-all"
                 @click="openFollowModal('following')"
               >
                 <div class="text-white font-bold text-xl">{{ followingsCount }}</div>
-                <div class="text-xs text-zinc-500">팔로잉</div>
+                <div class="text-xs text-zinc-400">팔로잉</div>
+              </div>
+              
+              <!-- Divider -->
+              <div class="w-px h-8 bg-zinc-800"></div>
+
+              <!-- My Posts Button -->
+              <div 
+                class="text-center cursor-pointer hover:bg-zinc-800 rounded-lg py-2 px-4 transition-all flex flex-col items-center gap-0.5"
+                @click="router.push({ name: 'community-me' })"
+              >
+                 <div class="text-white font-bold text-xl">{{ myPostCount }}</div>
+                 <div class="text-xs text-zinc-400 font-normal">내가 쓴 글</div>
               </div>
             </div>
 

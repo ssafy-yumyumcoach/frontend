@@ -1,17 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { Heart, MessageCircle, ImagePlus, Send, X, Search, ChevronLeft, ChevronRight } from "lucide-vue-next";
+import { Heart, MessageCircle, ImagePlus, Send, X, Search, ChevronLeft, ChevronRight, Trash2, Pencil } from "lucide-vue-next";
 import Avatar from "@/components/ui/Avatar.vue";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Textarea from "@/components/ui/Textarea.vue";
 import Dialog from "@/components/ui/Dialog.vue";
 import Label from "@/components/ui/Label.vue";
+import Select from "@/components/ui/Select.vue";
+import Checkbox from "@/components/ui/Checkbox.vue";
 
 import communityApi, { type PostSummary } from "@/api/community";
 import imageApi from "@/api/image";
-
 import { useAuthStore } from "@/stores/auth";
 
 const router = useRouter();
@@ -22,12 +23,25 @@ const authStore = useAuthStore();
 const posts = ref<PostSummary[]>([]);
 const isLoading = ref(false);
 const searchKeyword = ref("");
+const searchType = ref("all");
 const currentPage = ref(1);
 const totalPosts = ref(0);
-const pageSize = 20;
+const pageSize = 10;
+const selectedPostIds = ref<Set<number>>(new Set());
+const isEditMode = ref(false);
+
+const isMyPostsMode = computed(() => route.name === "community-me");
 
 const totalPages = computed(() => {
   return Math.max(1, Math.ceil(totalPosts.value / pageSize));
+});
+
+// Switch out of edit mode when leaving "My Posts"
+watch(isMyPostsMode, (newVal) => {
+    if (!newVal) {
+        isEditMode.value = false;
+        selectedPostIds.value.clear();
+    }
 });
 
 // Create Post State
@@ -37,14 +51,63 @@ const newPostContent = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
 const selectedImages = ref<{ file: File; preview: string }[]>([]);
 
-// --- Search / Fetch ---
+// --- Delete Logic ---
+const toggleEditMode = () => {
+    isEditMode.value = !isEditMode.value;
+    if (!isEditMode.value) {
+        selectedPostIds.value.clear();
+    }
+};
+
+const togglePostSelection = (postId: number) => {
+  if (selectedPostIds.value.has(postId)) {
+    selectedPostIds.value.delete(postId);
+  } else {
+    selectedPostIds.value.add(postId);
+  }
+};
+
+const isAllSelected = computed(() => {
+  if (posts.value.length === 0) return false;
+  return posts.value.every((post) => selectedPostIds.value.has(post.postId));
+});
+
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    // If all are selected, deselect only the current page's posts (or clear all? - usually current page)
+    // Let's clear current page posts from selection
+    posts.value.forEach((post) => selectedPostIds.value.delete(post.postId));
+  } else {
+    // Select all visible posts
+    posts.value.forEach((post) => selectedPostIds.value.add(post.postId));
+  }
+};
+
+const handleDeleteSelected = async () => {
+    if (selectedPostIds.value.size === 0) return;
+    if (!confirm(`${selectedPostIds.value.size}개의 게시글을 삭제하시겠습니까?`)) return;
+
+    try {
+        const deletePromises = Array.from(selectedPostIds.value).map(id => communityApi.deletePost(id));
+        await Promise.all(deletePromises);
+        alert("선택한 게시글이 삭제되었습니다.");
+        selectedPostIds.value.clear();
+        fetchPosts(); 
+    } catch (e) {
+        console.error("Failed to delete posts:", e);
+        alert("게시글 삭제 중 오류가 발생했습니다.");
+    }
+};
+
 // --- Search / Fetch ---
 const handleSearch = () => {
   const query: any = {};
   if (searchKeyword.value.trim()) {
     query.keyword = searchKeyword.value.trim();
   }
-  // 검색 시 1페이지로 이동
+  if (searchType.value !== "all") {
+    query.type = searchType.value;
+  }
   query.page = 1;
   router.push({ query });
 };
@@ -52,23 +115,28 @@ const handleSearch = () => {
 const handlePageChange = (page: number) => {
   if (page < 1 || page > totalPages.value) return;
   const query: any = { ...route.query, page };
+  if (searchType.value !== "all") {
+    query.type = searchType.value;
+  }
   router.push({ query });
 };
 
 const fetchPosts = async () => {
   isLoading.value = true;
+  selectedPostIds.value.clear();
   try {
     const keywordFromUrl = route.query.keyword as string;
+    const typeFromUrl = (route.query.type as string) || "all";
     const pageFromUrl = Number(route.query.page) || 1;
 
-    // Sync state
     currentPage.value = pageFromUrl;
+    searchType.value = typeFromUrl;
 
     const params: any = {
-      page: pageFromUrl - 1, // API is 0-based
+      page: pageFromUrl,
       size: pageSize,
     };
-
+    
     if (keywordFromUrl) {
       params.keyword = keywordFromUrl;
       if (searchKeyword.value !== keywordFromUrl) {
@@ -80,20 +148,27 @@ const fetchPosts = async () => {
       }
     }
 
-    const response = await communityApi.getPosts(params);
-    console.log("Posts Data:", response.data);
-
-    // 백엔드에서 필터링이 안 될 경우를 대비한 클라이언트 사이드 필터링 (임시)
-    // 페이지네이션과 함께 동작하려면 백엔드 필터링이 필수적이지만, 현재 상황 유지
+    let response;
+    if (isMyPostsMode.value) {
+        response = await communityApi.getMyPosts(params);
+    } else {
+        response = await communityApi.getPosts(params);
+    }
+    
     let fetchedPosts = response.data.posts;
     if (params.keyword) {
       const k = params.keyword.toLowerCase();
       fetchedPosts = fetchedPosts.filter((p) => {
-        return (
-          p.title.toLowerCase().includes(k) ||
-          (p.content && p.content.toLowerCase().includes(k)) ||
-          (p.contentPreview && p.contentPreview.toLowerCase().includes(k))
-        );
+        const inTitle = p.title.toLowerCase().includes(k);
+        const inContent = 
+          (p.content && p.content.toLowerCase().includes(k)) || 
+          (p.contentPreview && p.contentPreview.toLowerCase().includes(k));
+
+        if (searchType.value === "title") {
+          return inTitle;
+        } else {
+          return inTitle || inContent;
+        }
       });
     }
 
@@ -107,16 +182,18 @@ const fetchPosts = async () => {
 };
 
 watch(
-  () => [route.query.keyword, route.query.page],
+  () => [route.query.keyword, route.query.page, route.query.type, route.name],
   () => {
     fetchPosts();
   }
 );
 
 onMounted(() => {
-  // 초기 로드 시 URL 파라미터 확인
   if (route.query.keyword) {
     searchKeyword.value = route.query.keyword as string;
+  }
+  if (route.query.type) {
+    searchType.value = route.query.type as string;
   }
   fetchPosts();
 });
@@ -168,7 +245,6 @@ const handleSubmitPost = async () => {
   if (!newPostContent.value.trim()) return;
 
   try {
-    // 1. Upload images
     const imageUrls: string[] = [];
     if (selectedImages.value.length > 0) {
       const uploadPromises = selectedImages.value.map((img) => imageApi.uploadImage(img.file, "POST"));
@@ -176,14 +252,12 @@ const handleSubmitPost = async () => {
       imageUrls.push(...results);
     }
 
-    // 2. Create Post
     await communityApi.createPost({
       title: newPostTitle.value,
       content: newPostContent.value,
       images: imageUrls,
     });
 
-    // Reset and reload
     newPostContent.value = "";
     newPostTitle.value = "";
     selectedImages.value = [];
@@ -211,29 +285,62 @@ const formatTime = (dateStr: string) => {
   if (diff < 1000 * 60) {
     return "방금 전";
   }
-
   if (minutes < 60) {
     return `${minutes}분 전`;
   }
-
   if (hours < 24) {
     return `${hours}시간 전`;
   }
-
   if (days < 7) {
     return `${days}일 전`;
   }
-
   return date.toLocaleDateString();
 };
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6 pb-24">
     <!-- Header & Write Button -->
     <div class="flex items-center justify-between">
-      <h2 class="text-2xl text-white">전체 피드</h2>
-      <Button class="bg-emerald-500 hover:bg-emerald-600 text-white" @click="openWriteDialog">
+      <h2 class="text-2xl text-white">
+        {{ isMyPostsMode ? `내가 쓴 글 (${totalPosts})` : "전체 피드" }}
+      </h2>
+      
+      <div v-if="isMyPostsMode" class="flex gap-2">
+          <!-- Edit Toggle Button -->
+          <Button
+            variant="ghost"
+            size="icon"
+            class="text-zinc-400 hover:text-white"
+            @click="toggleEditMode"
+          >
+             <X v-if="isEditMode" class="w-5 h-5" />
+             <Pencil v-else class="w-5 h-5" />
+          </Button>
+
+          <template v-if="isEditMode">
+            <!-- Select All Button -->
+            <Button
+              variant="outline"
+              class="border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+              @click="toggleSelectAll"
+            >
+              {{ isAllSelected ? "전체 해제" : "전체 선택" }}
+            </Button>
+
+            <!-- Delete Button (Visible only in Edit Mode & Selection > 0) -->
+            <Button 
+              v-if="selectedPostIds.size > 0"
+              variant="destructive"
+              class="bg-red-500 hover:bg-red-600 text-white"
+              @click="handleDeleteSelected"
+            >
+              <Trash2 class="w-4 h-4 mr-2" />
+              삭제 ({{ selectedPostIds.size }})
+            </Button>
+          </template>
+      </div>
+      <Button v-else class="bg-emerald-500 hover:bg-emerald-600 text-white" @click="openWriteDialog">
         <Send class="w-4 h-4 mr-2" />
         글 작성하기
       </Button>
@@ -241,6 +348,18 @@ const formatTime = (dateStr: string) => {
 
     <!-- Search Bar -->
     <div class="flex gap-2">
+      <!-- Search Type Select -->
+      <div class="w-32">
+        <Select
+          v-model="searchType"
+          :options="[
+            { label: '제목+내용', value: 'all' },
+            { label: '제목', value: 'title' },
+          ]"
+          class="bg-zinc-900 border-zinc-800 text-white h-10"
+        />
+      </div>
+
       <div class="relative flex-1">
         <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
         <Input
@@ -262,20 +381,41 @@ const formatTime = (dateStr: string) => {
       <div
         v-for="post in posts"
         :key="post.postId"
-        class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-700 transition flex h-48"
-        @click="goToDetail(post.postId)"
+        class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-700 transition flex h-48 relative"
+        @click="isEditMode ? togglePostSelection(post.postId) : goToDetail(post.postId)"
       >
+        <!-- Overlay Selection Checkbox -->
+        <div 
+          v-if="isMyPostsMode && isEditMode" 
+          class="absolute top-3 left-3 z-20"
+          @click.stop
+        >
+          <Checkbox 
+            :checked="selectedPostIds.has(post.postId)"
+            @update:checked="togglePostSelection(post.postId)"
+            class="w-6 h-6 border-zinc-400 bg-black/50 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
+          />
+        </div>
+
         <!-- Left Content Section -->
         <div class="flex-1 p-5 flex flex-col justify-between gap-3 min-w-0">
           <!-- Top Section: Author + Content -->
           <div>
             <div class="flex items-center gap-3 mb-2">
-              <div @click.stop="goToProfile(post.authorId)" class="cursor-pointer hover:opacity-80 transition-opacity">
+              <div 
+                @click.stop="!isEditMode && goToProfile(post.authorId)" 
+                class="transition-opacity"
+                :class="isEditMode ? '' : 'cursor-pointer hover:opacity-80'"
+              >
                 <Avatar :src="post.authorProfileImageUrl" :fallback="post.authorUsername?.[0]" class="w-8 h-8" />
               </div>
-              <div @click.stop="goToProfile(post.authorId)" class="cursor-pointer hover:underline">
+              <div 
+                @click.stop="!isEditMode && goToProfile(post.authorId)" 
+                class="transition-opacity"
+                :class="isEditMode ? '' : 'cursor-pointer hover:underline'"
+              >
                 <div class="text-white text-sm font-medium">{{ post.authorUsername }}</div>
-                <div class="text-[10px] text-zinc-400">{{ formatTime(post.createdAt) }}</div>
+                <div class="text-xs text-zinc-400">{{ formatTime(post.createdAt) }}</div>
               </div>
             </div>
 
@@ -303,7 +443,7 @@ const formatTime = (dateStr: string) => {
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalPages > 1" class="flex justify-center items-center gap-2 py-8">
+      <div v-if="totalPages >= 1 && totalPosts > 0" class="flex justify-center items-center gap-2 py-8">
         <Button
           variant="outline"
           size="icon"
@@ -320,12 +460,7 @@ const formatTime = (dateStr: string) => {
             :key="page"
             variant="ghost"
             size="sm"
-            :class="[
-              'w-8 h-8 p-0',
-              currentPage === page
-                ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800',
-            ]"
+            :class="`w-8 h-8 p-0 ${currentPage === page ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`"
             @click="handlePageChange(page)"
           >
             {{ page }}
