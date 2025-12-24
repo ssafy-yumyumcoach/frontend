@@ -12,7 +12,10 @@ import Label from "@/components/ui/Label.vue";
 import communityApi, { type PostSummary } from "@/api/community";
 import imageApi from "@/api/image";
 
+import { useAuthStore } from "@/stores/auth";
+
 const router = useRouter();
+const authStore = useAuthStore();
 
 // Feed State
 const posts = ref<PostSummary[]>([]);
@@ -49,6 +52,9 @@ const goToDetail = (postId: number) => {
 };
 
 const goToProfile = (userId: number) => {
+  if (userId === authStore.user?.userId) {
+    return;
+  }
   router.push({ name: "user-profile", params: { id: userId } });
 };
 

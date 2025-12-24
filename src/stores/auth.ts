@@ -5,6 +5,7 @@ import api from "@/api/axios";
 import userApi from "@/api/user";
 
 interface UserInfo {
+  userId?: number;
   email: string;
   username: string;
   profileImageUrl?: string;
@@ -206,6 +207,7 @@ export const useAuthStore = defineStore("auth", () => {
       const basic = res.data.basic;
 
       const updates: any = {};
+      if (basic.userId) updates.userId = basic.userId;
       if (basic.username) updates.username = basic.username;
       if (basic.email) updates.email = basic.email;
 

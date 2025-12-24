@@ -11,11 +11,17 @@ import Label from "@/components/ui/Label.vue";
 import communityApi, { type PostDetailResponse, type CommentResponse } from "@/api/community";
 import imageApi from "@/api/image";
 
+import { useAuthStore } from "@/stores/auth";
+
 const route = useRoute();
 const router = useRouter();
 const postId = Number(route.params.id);
+const authStore = useAuthStore();
 
 const goToProfile = (userId: number) => {
+  if (userId === authStore.user?.userId) {
+    return;
+  }
   router.push({ name: "user-profile", params: { id: userId } });
 };
 
