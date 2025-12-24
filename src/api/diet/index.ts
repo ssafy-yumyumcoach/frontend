@@ -88,8 +88,9 @@ export interface MyDietItem {
   dietItemId: number;
   foodId: number;
   name: string;
-  amount: number;
-  unit: string;
+  amount?: number; // 구버전 필드
+  serveCount?: number; // 신버전 필드 (인분 단위)
+  unit?: string;
   calories: number;
 }
 
@@ -115,6 +116,8 @@ export interface GetMyDietDetailResponse {
   items: MyDietItem[];
   createdAt: string; // ISO string (e.g. 2025-12-05T08:30:00)
   updatedAt: string; // ISO string (e.g. 2025-12-05T09:00:00)
+  recordedAt?: string; // 식사 시간 (ISO string)
+  imageUrl?: string; // 이미지 URL (상대 경로)
 }
 
 export default {

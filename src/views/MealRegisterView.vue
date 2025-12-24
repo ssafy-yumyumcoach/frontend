@@ -225,32 +225,45 @@ const loadDietForEdit = async () => {
     // getMyDietDetail로 상세 정보 가져오기
     const diet = await dietStore.getMyDietDetail(editDietId.value);
 
-    // 날짜 설정
-    if (diet.date) {
-      selectedDate.value = diet.date;
-    }
+    // 날짜 및 시간 설정 (recordedAt 우선)
+    if (diet.recordedAt) {
+      const dateTime = new Date(diet.recordedAt);
+      const year = dateTime.getFullYear();
+      const month = String(dateTime.getMonth() + 1).padStart(2, "0");
+      const day = String(dateTime.getDate()).padStart(2, "0");
+      selectedDate.value = `${year}-${month}-${day}`;
 
-    // createdAt에서 시간 추출
-    if (diet.createdAt) {
-      const dateTime = new Date(diet.createdAt);
       const hours = String(dateTime.getHours()).padStart(2, "0");
       const minutes = String(dateTime.getMinutes()).padStart(2, "0");
       selectedTime.value = `${hours}:${minutes}`;
     } else {
-      // createdAt이 없으면 timeSlot에 따라 기본 시간 설정
-      switch (diet.timeSlot) {
-        case "BREAKFAST":
-          selectedTime.value = "08:00";
-          break;
-        case "LUNCH":
-          selectedTime.value = "12:30";
-          break;
-        case "DINNER":
-          selectedTime.value = "19:00";
-          break;
-        case "SNACK":
-          selectedTime.value = "15:00";
-          break;
+      // recordedAt 없으면 date 사용
+      if (diet.date) {
+        selectedDate.value = diet.date;
+      }
+
+      // 시간은 createdAt 또는 timeSlot 기본값 사용
+      if (diet.createdAt) {
+        const dateTime = new Date(diet.createdAt);
+        const hours = String(dateTime.getHours()).padStart(2, "0");
+        const minutes = String(dateTime.getMinutes()).padStart(2, "0");
+        selectedTime.value = `${hours}:${minutes}`;
+      } else {
+        // createdAt도 없으면 timeSlot에 따라 기본 시간 설정
+        switch (diet.timeSlot) {
+          case "BREAKFAST":
+            selectedTime.value = "08:00";
+            break;
+          case "LUNCH":
+            selectedTime.value = "12:30";
+            break;
+          case "DINNER":
+            selectedTime.value = "19:00";
+            break;
+          case "SNACK":
+            selectedTime.value = "15:00";
+            break;
+        }
       }
     }
 
@@ -274,7 +287,13 @@ const loadDietForEdit = async () => {
     if (diet.items && Array.isArray(diet.items)) {
       foods.value = await Promise.all(
         diet.items.map(async (item, idx: number) => {
-          const amount = item.amount || 100;
+          // 백엔드 응답이 serveCount로 올 경우 (item.amount가 없으면) 100g 단위로 변환
+          // serveCount: 1.0 => 100g, 2.0 => 200g
+          let amount = item.amount || 100;
+          if (!item.amount && item.serveCount) {
+            amount = item.serveCount * 100;
+          }
+
           let baseCalories = 0;
           let baseCarbs = 0;
           let baseProtein = 0;
@@ -296,8 +315,20 @@ const loadDietForEdit = async () => {
               // 최신 음식 이름으로 업데이트 (DB 기준)
               foodName = foodDetail.name;
             } catch (e) {
-              // 조회 실패 시 저장된 calories를 100g 기준으로 가정
-              baseCalories = item.calories || 0;
+              // 조회 실패 시 저장된 calories를 바탕으로 baseCalories(100g 기준) 역산
+              // item.calories는 해당 amount(예: 200g)에 대한 칼로리일 수 있음
+              // 따라서 baseCalories = item.calories / (amount / 100)
+              const savedCalories = item.calories || 0;
+
+              // serveCount가 존재하면 item.calories를 1인분(100g) 기준 Unit 칼로리로 간주
+              if (item.serveCount) {
+                baseCalories = savedCalories;
+              } else {
+                // 구버전: 저장된 칼로리가 Total이므로 역산
+                const ratio = amount > 0 ? amount / 100 : 1;
+                baseCalories = savedCalories / ratio;
+              }
+
               baseCarbs = 0;
               baseProtein = 0;
               baseFat = 0;
@@ -334,6 +365,19 @@ const loadDietForEdit = async () => {
           };
         })
       );
+    }
+
+    // 이미지 설정
+    if (diet.imageUrl) {
+      // CloudFront 도메인 명시
+      const cloudfrontDomain = "https://d3sn2183nped6z.cloudfront.net/";
+      // 이미 절대 경로(http)라면 그대로, 아니면 도메인 붙이기
+      if (diet.imageUrl.startsWith("http")) {
+        uploadedPhotoUrl.value = diet.imageUrl;
+      } else {
+        uploadedPhotoUrl.value = `${cloudfrontDomain}${diet.imageUrl}`;
+      }
+      hasPhoto.value = true;
     }
   } catch (e: any) {
     console.error("Failed to load diet for edit", e);
