@@ -39,18 +39,13 @@ export const useDietStore = defineStore("diet", () => {
     errorMessage.value = "";
 
     try {
-      console.log('📞 [diet.ts] createMyDiet 호출, payload:', JSON.stringify(payload, null, 2));
       const response = await dietApi.createMyDiet(payload);
-      console.log('✅ [diet.ts] createMyDiet 응답:', response);
       lastCreatedDietId.value = response.data;
       return response.data;
     } catch (error: unknown) {
       let message = "식단 저장에 실패했습니다.";
 
       if (axios.isAxiosError(error) && error.response) {
-        console.error('❌ [diet.ts] createMyDiet 에러 응답:', error.response);
-        console.error('❌ [diet.ts] 에러 응답 데이터:', error.response.data);
-        console.error('❌ [diet.ts] 에러 상태 코드:', error.response.status);
         const data = error.response.data as ApiErrorResponse | undefined;
         if (data?.message) message = data.message;
       }
@@ -135,18 +130,7 @@ export const useDietStore = defineStore("diet", () => {
     errorMessage.value = "";
 
     try {
-      console.log('📞 [diet.ts] getMyDiets 호출, date:', date);
       const response = await dietApi.getMyDiets(date);
-      console.log('✅ [diet.ts] getMyDiets 응답:', response);
-      console.log('✅ [diet.ts] response.data:', response.data);
-      console.log('✅ [diet.ts] response.data 타입:', typeof response.data);
-      console.log('✅ [diet.ts] response.data가 배열인가?', Array.isArray(response.data));
-      if (response.data && typeof response.data === 'object' && !Array.isArray(response.data)) {
-        console.log('✅ [diet.ts] response.data의 모든 키:', Object.keys(response.data));
-        console.log('✅ [diet.ts] response.data.diets:', response.data.diets);
-        console.log('✅ [diet.ts] response.data.diets 타입:', typeof response.data.diets);
-        console.log('✅ [diet.ts] response.data.diets가 배열인가?', Array.isArray(response.data.diets));
-      }
       myDiets.value = response.data;
       return response.data;
     } catch (error: unknown) {
@@ -179,17 +163,6 @@ export const useDietStore = defineStore("diet", () => {
     try {
       console.log(`📞 [diet.ts] getMyDietDetail 호출, dietId:`, dietId);
       const response = await dietApi.getMyDietDetail(dietId);
-      console.log(`✅ [diet.ts] getMyDietDetail 응답:`, response);
-      console.log(`✅ [diet.ts] response.data:`, response.data);
-      console.log(`✅ [diet.ts] response.data.items:`, response.data.items);
-      console.log(`✅ [diet.ts] response.data.items 타입:`, typeof response.data.items);
-      console.log(`✅ [diet.ts] response.data.items가 배열인가?`, Array.isArray(response.data.items));
-      if (response.data.items && Array.isArray(response.data.items)) {
-        console.log(`✅ [diet.ts] items 개수:`, response.data.items.length);
-        if (response.data.items.length > 0) {
-          console.log(`✅ [diet.ts] 첫 번째 item:`, response.data.items[0]);
-        }
-      }
       myDietDetail.value = response.data;
       return response.data;
     } catch (error: unknown) {

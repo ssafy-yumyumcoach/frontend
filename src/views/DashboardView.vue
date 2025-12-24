@@ -120,10 +120,7 @@ const displayedDiets = ref<
 
 const fetchDailyDiets = async (targetDate: string) => {
   try {
-    console.log("📅 [Dashboard] 날짜:", targetDate);
-    console.log("📞 [Dashboard] getMyDiets API 호출 시작");
     const res = await dietStore.getMyDiets(targetDate);
-    console.log("✅ [Dashboard] getMyDiets API 응답:", res);
 
     // API 응답 구조에 따라 유연하게 처리
     let diets: any[] = [];
@@ -171,9 +168,7 @@ const fetchDailyDiets = async (targetDate: string) => {
         if (imageUrl && !imageUrl.startsWith("http")) {
           imageUrl = `${cdnDomain}${imageUrl}`;
         }
-        if (imageUrl) {
-          console.log("🥗 Diet Image URL:", imageUrl);
-        }
+
 
         let items: any[] = [];
         if (diet.items !== null && diet.items !== undefined && Array.isArray(diet.items)) {

@@ -100,9 +100,17 @@ export interface LikeResponse {
 
 export default {
   // 게시글
+  // 게시글
   getPosts: (params?: any) => api.get<PostListResponse>("/posts", { params }),
   getPostDetail: (postId: number) => api.get<PostDetailResponse>(`/posts/${postId}`),
-  createPost: (data: PostCreateRequest) => api.post<PostResponse>("/posts", data), // Create returns simple response usually
+  
+  // 게시글 작성
+  createPost: (data: PostCreateRequest) => api.post<void>(`/posts`, data),
+
+  // 내가 쓴 게시글 조회
+  getMyPosts: (params?: any) => api.get<PostListResponse>(`/posts/me`, { params }),
+
+  // 게시글 삭제/수정
   deletePost: (postId: number) => api.delete(`/posts/${postId}`),
   updatePost: (postId: number, data: PostUpdateRequest) => api.put<PostDetailResponse>(`/posts/${postId}`, data),
 
