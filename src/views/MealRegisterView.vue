@@ -10,8 +10,14 @@ import ToggleGroup from "@/components/ui/ToggleGroup.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
 import { useFoodsStore } from "@/stores/foods";
 import { useDietStore } from "@/stores/diet";
-import { type UpdateMyDietItemRequest, type DietTimeSlot, type CreateMyDietRequest, type UpdateMyDietRequest } from "@/api/diet";
+import {
+  type UpdateMyDietItemRequest,
+  type DietTimeSlot,
+  type CreateMyDietRequest,
+  type UpdateMyDietRequest,
+} from "@/api/diet";
 import statsApi from "@/api/stats";
+import { formatNutrition } from "@/lib/utils";
 import detectionApi, { type DetectionResult } from "@/api/detection";
 import imageApi from "@/api/image/index";
 
@@ -61,7 +67,6 @@ interface FoodItem {
   baseCarbs: number; // 100g 기준 기본 탄수화물
   baseProtein: number; // 100g 기준 기본 단백질
   baseFat: number; // 100g 기준 기본 지방
-
 }
 
 // State
@@ -169,7 +174,7 @@ const filteredFoodOptions = computed(() => {
   }
   // API에서 이미 검색어로 필터링된 결과를 반환하므로, 추가 필터링 없이 그대로 사용
   return foodsStore.foods.map((f) => ({
-    label: `${f.name} · ${f.calories}kcal`,
+    label: `${f.name} · ${formatNutrition(f.calories)}kcal`,
     value: String(f.id),
     food: f,
   }));
@@ -274,7 +279,7 @@ const loadDietForEdit = async () => {
           let baseCarbs = 0;
           let baseProtein = 0;
           let baseFat = 0;
-          
+
           // 음식 이름 초기화 (fallback 처리)
           // 백엔드 응답에 따라 item.name 또는 item.foodName에 값이 있을 수 있음
           let foodName = item.name || (item as any).foodName || "";
@@ -287,7 +292,7 @@ const loadDietForEdit = async () => {
               baseCarbs = foodDetail.carbohydrate;
               baseProtein = foodDetail.protein;
               baseFat = foodDetail.fat;
-              
+
               // 최신 음식 이름으로 업데이트 (DB 기준)
               foodName = foodDetail.name;
             } catch (e) {
@@ -359,8 +364,6 @@ onUnmounted(() => {
   }
 });
 
-
-
 // State
 const isAnalyzing = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -377,7 +380,7 @@ const handleFileChange = async (event: Event) => {
   if (!input.files || input.files.length === 0) return;
 
   const file = input.files[0];
-  
+
   // Validate file type
   if (!file.type.startsWith("image/")) {
     alert("이미지 파일만 업로드할 수 있습니다.");
@@ -400,65 +403,64 @@ const handleFileChange = async (event: Event) => {
 
   try {
     const response = await detectionApi.detectImage(file);
-    
+
     if (response.results && response.results.length > 0) {
       const newFoods: FoodItem[] = [];
-      
+
       // Process each detected food
       for (const result of response.results) {
         const label = result.label;
         let foodData = {
-           name: label,
-           calories: 100, // Default fallback
-           carbs: 20,
-           protein: 5,
-           fat: 1,
-           foodId: null as number | null
+          name: label,
+          calories: 100, // Default fallback
+          carbs: 20,
+          protein: 5,
+          fat: 1,
+          foodId: null as number | null,
         };
 
         try {
-            // Search API for real nutrition data
-            const searchResults = await foodsStore.fetchFoods({ keyword: label });
-            
-            // If we have results, use the first one (assuming best match)
-            if (searchResults && searchResults.length > 0) {
-                const matched = searchResults[0];
-                foodData = {
-                    name: matched.name,
-                    calories: matched.calories,
-                    carbs: matched.carbohydrate,
-                    protein: matched.protein,
-                    fat: matched.fat,
-                    foodId: matched.id
-                };
-            }
-        } catch(e) {
-            console.warn(`Failed to fetch nutrition for ${label}, using defaults.`);
+          // Search API for real nutrition data
+          const searchResults = await foodsStore.fetchFoods({ keyword: label });
+
+          // If we have results, use the first one (assuming best match)
+          if (searchResults && searchResults.length > 0) {
+            const matched = searchResults[0];
+            foodData = {
+              name: matched.name,
+              calories: matched.calories,
+              carbs: matched.carbohydrate,
+              protein: matched.protein,
+              fat: matched.fat,
+              foodId: matched.id,
+            };
+          }
+        } catch (e) {
+          console.warn(`Failed to fetch nutrition for ${label}, using defaults.`);
         }
 
         newFoods.push({
-            id: `k-${Date.now()}-${result.class_id}-${Math.random()}`, // Ensure unique ID
-            foodId: foodData.foodId,
-            name: foodData.name,
-            checked: true,
-            amount: 100, // Default 1 serving
-            unit: 'g',
-            baseCalories: foodData.calories,
-            baseCarbs: foodData.carbs,
-            baseProtein: foodData.protein,
-            baseFat: foodData.fat,
-            calories: foodData.calories,
-            carbs: foodData.carbs,
-            protein: foodData.protein,
-            fat: foodData.fat
+          id: `k-${Date.now()}-${result.class_id}-${Math.random()}`, // Ensure unique ID
+          foodId: foodData.foodId,
+          name: foodData.name,
+          checked: true,
+          amount: 100, // Default 1 serving
+          unit: "g",
+          baseCalories: foodData.calories,
+          baseCarbs: foodData.carbs,
+          baseProtein: foodData.protein,
+          baseFat: foodData.fat,
+          calories: foodData.calories,
+          carbs: foodData.carbs,
+          protein: foodData.protein,
+          fat: foodData.fat,
         });
       }
-      
+
       foods.value = newFoods;
     } else {
       alert("음식을 찾을 수 없어요. 직접 검색해서 추가해주세요.");
     }
-
   } catch (error) {
     console.error("Detection failed:", error);
     alert("사진 분석에 실패했습니다. 다시 시도하거나 직접 입력해주세요.");
@@ -467,7 +469,7 @@ const handleFileChange = async (event: Event) => {
   } finally {
     isAnalyzing.value = false;
     // Reset input so same file can be selected again
-    input.value = ""; 
+    input.value = "";
   }
 };
 
@@ -505,7 +507,6 @@ const handleDeleteFood = (id: string) => {
 };
 
 // ... existing code ...
-
 
 const handleAddCatalogFood = async () => {
   if (!selectedCatalogFoodId.value) return;
@@ -607,9 +608,9 @@ const handleSave = async () => {
       } catch (e) {
         console.error("Image upload failed", e);
         saveErrorMessage.value = "사진 업로드에 실패했습니다. 사진 없이 저장하거나 다시 시도해주세요.";
-        return; 
+        return;
       }
-    } 
+    }
 
     if (isEditMode.value && editDietId.value) {
       // 수정 모드
@@ -626,7 +627,7 @@ const handleSave = async () => {
         recordedAt: dateWithTime,
         mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: updatePayload,
-        imageUrl: imageKey || undefined
+        imageUrl: imageKey || undefined,
       };
 
       await dietStore.updateMyDiet(editDietId.value, updatePayloadData);
@@ -635,14 +636,14 @@ const handleSave = async () => {
       const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
 
       const payload: CreateMyDietRequest = {
-        recordedAt: dateWithTime, 
+        recordedAt: dateWithTime,
         mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: selectedItems.map((f, index) => ({
           foodId: f.foodId!,
-          serveCount: f.amount / 100, 
+          serveCount: f.amount / 100,
           orderIndex: index + 1,
         })),
-        imageUrl: imageKey || undefined
+        imageUrl: imageKey || undefined,
       };
 
       await dietStore.createMyDiet(payload);
@@ -702,15 +703,8 @@ const handleSave = async () => {
       <!-- 좌측 - 식단 사진 업로드 & 미리보기 -->
       <div class="space-y-4">
         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
-
-        <!-- Hidden File Input (Always present) -->
-        <input 
-          type="file" 
-          ref="fileInputRef" 
-          class="hidden" 
-          accept="image/*" 
-          @change="handleFileChange" 
-        />
+          <!-- Hidden File Input (Always present) -->
+          <input type="file" ref="fileInputRef" class="hidden" accept="image/*" @change="handleFileChange" />
           <div
             v-if="!hasPhoto"
             class="flex flex-col items-center justify-center py-16 space-y-4 border-2 border-dashed border-zinc-700 rounded-lg aspect-square"
@@ -720,21 +714,28 @@ const handleSave = async () => {
               식단 사진을 업로드하면,<br />
               AI가 음식과 영양 정보를 분석해줘요.
             </p>
-            <Button 
-              @click="handlePhotoUpload" 
+            <Button
+              @click="handlePhotoUpload"
               class="bg-emerald-500 hover:bg-emerald-600 text-white"
               :disabled="isAnalyzing"
             >
-               <div class="flex items-center">
-                  <div v-if="isAnalyzing" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  <Upload v-else class="w-4 h-4 mr-2" />
-                  <span>{{ isAnalyzing ? '분석 중...' : '사진 업로드' }}</span>
-               </div>
+              <div class="flex items-center">
+                <div
+                  v-if="isAnalyzing"
+                  class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"
+                ></div>
+                <Upload v-else class="w-4 h-4 mr-2" />
+                <span>{{ isAnalyzing ? "분석 중..." : "사진 업로드" }}</span>
+              </div>
             </Button>
           </div>
           <div v-else>
             <div class="relative aspect-square rounded-lg overflow-hidden bg-zinc-800">
-              <ImageWithFallback :src="uploadedPhotoUrl" alt="업로드된 식단 사진" class="w-full h-full object-contain bg-zinc-950" />
+              <ImageWithFallback
+                :src="uploadedPhotoUrl"
+                alt="업로드된 식단 사진"
+                class="w-full h-full object-contain bg-zinc-950"
+              />
 
               <!-- 버튼 오버레이 -->
               <div class="absolute top-4 right-4 flex gap-2">
@@ -798,8 +799,9 @@ const handleSave = async () => {
                 >
                   <div class="text-white text-sm font-medium">{{ option.food.name }}</div>
                   <div class="text-zinc-400 text-xs mt-1">
-                    {{ option.food.calories }}kcal · 탄 {{ option.food.carbohydrate }}g · 단백질
-                    {{ option.food.protein }}g · 지방 {{ option.food.fat }}g
+                    {{ formatNutrition(option.food.calories) }}kcal · 탄
+                    {{ formatNutrition(option.food.carbohydrate) }}g · 단백질
+                    {{ formatNutrition(option.food.protein) }}g · 지방 {{ formatNutrition(option.food.fat) }}g
                   </div>
                 </div>
               </div>
@@ -871,7 +873,8 @@ const handleSave = async () => {
 
               <!-- 영양 정보 요약 -->
               <div class="text-sm text-zinc-400">
-                {{ food.calories }} kcal · 탄 {{ food.carbs }}g · 단백질 {{ food.protein }}g · 지방 {{ food.fat }}g
+                {{ formatNutrition(food.calories) }} kcal · 탄 {{ formatNutrition(food.carbs) }}g · 단백질
+                {{ formatNutrition(food.protein) }}g · 지방 {{ formatNutrition(food.fat) }}g
               </div>
             </div>
           </div>
@@ -886,10 +889,12 @@ const handleSave = async () => {
         <div class="space-y-3 flex-1">
           <h3 class="text-xl text-white">오늘 {{ mealTypeLabel }} 식단 요약</h3>
           <div class="space-y-2">
-            <p class="text-2xl text-emerald-400">총 섭취 예상 칼로리: {{ totalNutrition.calories }} kcal</p>
+            <p class="text-2xl text-emerald-400">
+              총 섭취 예상 칼로리: {{ formatNutrition(totalNutrition.calories) }} kcal
+            </p>
             <p class="text-zinc-300">
-              탄수화물: {{ totalNutrition.carbs }}g / 단백질: {{ totalNutrition.protein }}g / 지방:
-              {{ totalNutrition.fat }}g
+              탄수화물: {{ formatNutrition(totalNutrition.carbs) }}g / 단백질:
+              {{ formatNutrition(totalNutrition.protein) }}g / 지방: {{ formatNutrition(totalNutrition.fat) }}g
             </p>
           </div>
 
