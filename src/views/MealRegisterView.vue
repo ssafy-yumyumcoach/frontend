@@ -18,7 +18,7 @@ import {
 } from "@/api/diet";
 import statsApi from "@/api/stats";
 import { formatDecimal } from "@/lib/utils";
-import detectionApi, { type DetectionResult } from "@/api/detection";
+import detectionApi from "@/api/detection";
 import imageApi from "@/api/image/index";
 
 const router = useRouter();
@@ -799,8 +799,9 @@ const handleSave = async () => {
                 >
                   <div class="text-white text-sm font-medium">{{ option.food.name }}</div>
                   <div class="text-zinc-400 text-xs mt-1">
-                    {{ formatDecimal(option.food.calories) }}kcal · 탄 {{ formatDecimal(option.food.carbohydrate) }}g ·
-                    단백질 {{ formatDecimal(option.food.protein) }}g · 지방 {{ formatDecimal(option.food.fat) }}g
+                    {{ formatDecimal(option.food.calories) }}kcal · 탄수화물
+                    {{ formatDecimal(option.food.carbohydrate) }}g · 단백질 {{ formatDecimal(option.food.protein) }}g ·
+                    지방 {{ formatDecimal(option.food.fat) }}g
                   </div>
                 </div>
               </div>
@@ -872,7 +873,7 @@ const handleSave = async () => {
 
               <!-- 영양 정보 요약 -->
               <div class="text-sm text-zinc-400">
-                {{ formatDecimal(food.calories) }} kcal · 탄 {{ formatDecimal(food.carbs) }}g · 단백질
+                {{ formatDecimal(food.calories) }} kcal · 탄수화물 {{ formatDecimal(food.carbs) }}g · 단백질
                 {{ formatDecimal(food.protein) }}g · 지방 {{ formatDecimal(food.fat) }}g
               </div>
             </div>
