@@ -748,12 +748,6 @@ const handleSave = async () => {
                 </Button>
               </div>
             </div>
-
-            <!-- AI 인식 상태 -->
-            <div class="flex items-center gap-2 text-emerald-400 mt-4">
-              <div class="w-2 h-2 bg-emerald-400 rounded-full"></div>
-              <span class="text-sm">{{ foods.length }}개의 음식을 인식했어요.</span>
-            </div>
           </div>
         </div>
       </div>
