@@ -176,7 +176,7 @@ const handleSubmit = async () => {
           </div>
 
           <div class="space-y-4">
-            <h1 class="text-6xl tracking-tight">냠냠코치</h1>
+            <h1 class="text-6xl tracking-tight">냠발란스</h1>
             <p class="text-2xl text-white/90">
               AI로 식단을 분석하고
               <br />
@@ -226,7 +226,7 @@ const handleSubmit = async () => {
         <!-- Mobile Logo -->
         <div class="lg:hidden flex items-center gap-2 mb-8">
           <Utensils class="w-6 h-6 text-emerald-500" />
-          <span class="text-2xl text-white">냠냠코치</span>
+          <span class="text-2xl text-white">냠발란스</span>
         </div>
 
         <!-- Header -->

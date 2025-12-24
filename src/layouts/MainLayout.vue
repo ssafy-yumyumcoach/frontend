@@ -89,7 +89,7 @@ onMounted(() => {
       <div class="p-6 border-b border-zinc-800 cursor-pointer" @click="router.push('/dashboard')">
         <div class="flex items-center gap-3">
           <Utensils class="w-7 h-7 text-emerald-500" />
-          <span class="text-2xl text-white">냠냠코치</span>
+          <span class="text-2xl text-white">냠발란스</span>
         </div>
       </div>
 
@@ -130,7 +130,7 @@ onMounted(() => {
         <div class="p-6 border-b border-zinc-800 flex items-center justify-between">
           <div class="flex items-center gap-3 cursor-pointer" @click="router.push('/dashboard')">
             <Utensils class="w-7 h-7 text-emerald-500" />
-            <span class="text-xl text-white">냠냠코치</span>
+            <span class="text-xl text-white">냠발란스</span>
           </div>
           <button @click="isMobileMenuOpen = false" class="text-zinc-400">
             <X class="w-6 h-6" />
