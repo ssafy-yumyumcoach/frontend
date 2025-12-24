@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import {
   LayoutDashboard,
@@ -37,15 +37,25 @@ const menuItems = [
 
 const activeMenu = computed(() => {
   const currentPath = route.path;
-  const item = menuItems.find((item) => 
-    item.path === currentPath || currentPath.startsWith(`${item.path}/`)
-  );
+  const item = menuItems.find((item) => item.path === currentPath || currentPath.startsWith(`${item.path}/`));
   return item ? item.id : "dashboard";
 });
 
 const activeLabel = computed(() => {
   const item = menuItems.find((i) => i.id === activeMenu.value);
   return item ? item.label : "대시보드";
+});
+
+const userProfileImage = computed(() => {
+  const user = authStore.user;
+  if (!user?.profileImageUrl) return undefined;
+
+  let url = user.profileImageUrl;
+  const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
+  if (url.includes(cdnDomain + cdnDomain)) {
+    url = url.replace(cdnDomain + cdnDomain, cdnDomain);
+  }
+  return url;
 });
 
 const handleMenuClick = (path: string) => {
@@ -63,17 +73,23 @@ const today = new Date();
 const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).padStart(2, "0")}. ${String(
   today.getDate()
 ).padStart(2, "0")}`;
+
+onMounted(() => {
+  if (authStore.isAuthenticated) {
+    authStore.fetchCurrentUser();
+  }
+});
 </script>
 
 <template>
   <div class="min-h-screen bg-zinc-950 flex">
     <!-- 사이드바 - Desktop -->
     <aside class="hidden lg:flex lg:flex-col lg:w-64 bg-zinc-900 border-r border-zinc-800">
-        <!-- 로고 -->
+      <!-- 로고 -->
       <div class="p-6 border-b border-zinc-800 cursor-pointer" @click="router.push('/dashboard')">
         <div class="flex items-center gap-3">
           <Utensils class="w-7 h-7 text-emerald-500" />
-          <span class="text-2xl text-white">냠냠코치</span>
+          <span class="text-2xl text-white">냠발란스</span>
         </div>
       </div>
 
@@ -94,7 +110,7 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
           <span>{{ item.label }}</span>
         </button>
       </nav>
-      
+
       <!-- 로그아웃 (데스크톱) -->
       <div class="p-4 border-t border-zinc-800">
         <button
@@ -114,7 +130,7 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
         <div class="p-6 border-b border-zinc-800 flex items-center justify-between">
           <div class="flex items-center gap-3 cursor-pointer" @click="router.push('/dashboard')">
             <Utensils class="w-7 h-7 text-emerald-500" />
-            <span class="text-xl text-white">냠냠코치</span>
+            <span class="text-xl text-white">냠발란스</span>
           </div>
           <button @click="isMobileMenuOpen = false" class="text-zinc-400">
             <X class="w-6 h-6" />
@@ -140,16 +156,16 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
             <span>{{ item.label }}</span>
           </button>
         </nav>
-        
+
         <!-- 로그아웃 (모바일) -->
         <div class="p-4 border-t border-zinc-800">
-            <button
+          <button
             @click="handleLogout"
             class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all"
-            >
+          >
             <LogOut class="w-5 h-5" />
             <span>로그아웃</span>
-            </button>
+          </button>
         </div>
       </aside>
     </div>
@@ -170,17 +186,21 @@ const formattedDate = `${today.getFullYear()}. ${String(today.getMonth() + 1).pa
           <!-- 우측 -->
           <div class="flex items-center gap-6">
             <span class="text-zinc-400 hidden sm:block">{{ formattedDate }}</span>
-            <div 
-              class="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity" 
+            <div
+              class="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
               v-if="authStore.user"
               @click="router.push('/mypage')"
             >
-              <Avatar class="w-9 h-9" :fallback="authStore.user.username.slice(0, 1)" class-name="bg-emerald-500 text-white" />
+              <Avatar
+                class="w-9 h-9"
+                :src="userProfileImage"
+                :fallback="authStore.user.username.slice(0, 1)"
+                class-name="bg-emerald-500 text-white"
+              />
               <span class="text-white hidden sm:block">{{ authStore.user.username }}</span>
             </div>
           </div>
         </div>
-
       </header>
 
       <!-- 메인 콘텐츠 -->

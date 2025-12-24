@@ -8,7 +8,7 @@ import { useDietStore } from "@/stores/diet";
 import aiApi, { type MealPlanResponse } from "@/api/ai/index";
 import statsApi from "@/api/stats";
 import challengeApi, { type ChallengeSummary } from "@/api/challenge";
-import { cn } from "@/lib/utils";
+import { cn, formatDecimal } from "@/lib/utils";
 
 const router = useRouter();
 const dietStore = useDietStore();
@@ -87,7 +87,7 @@ const formattedDate = computed(() => {
 const changeDate = (days: number) => {
   const date = new Date(currentDate.value);
   date.setDate(date.getDate() + days);
-  
+
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
@@ -163,16 +163,16 @@ const fetchDailyDiets = async (targetDate: string) => {
     displayedDiets.value = await Promise.all(
       diets.map(async (diet: any) => {
         const dietId = diet.id || diet.dietId;
-        const timeSlot = diet.mealType || diet.timeSlot; 
+        const timeSlot = diet.mealType || diet.timeSlot;
         const dateTime = diet.date || diet.recordedAt || diet.createdAt;
-        
-        const cdnDomain = 'https://d3sn2183nped6z.cloudfront.net/';
+
+        const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
         let imageUrl = diet.imageUrl || diet.imgUrl || diet.image;
-        if (imageUrl && !imageUrl.startsWith('http')) {
+        if (imageUrl && !imageUrl.startsWith("http")) {
           imageUrl = `${cdnDomain}${imageUrl}`;
         }
         if (imageUrl) {
-            console.log("🥗 Diet Image URL:", imageUrl);
+          console.log("🥗 Diet Image URL:", imageUrl);
         }
 
         let items: any[] = [];
@@ -191,11 +191,20 @@ const fetchDailyDiets = async (targetDate: string) => {
 
         let timeSlotLabel = "";
         switch (timeSlot) {
-          case "BREAKFAST": timeSlotLabel = "아침"; break;
-          case "LUNCH": timeSlotLabel = "점심"; break;
-          case "DINNER": timeSlotLabel = "저녁"; break;
-          case "SNACK": timeSlotLabel = "간식"; break;
-          default: timeSlotLabel = timeSlot || "식단";
+          case "BREAKFAST":
+            timeSlotLabel = "아침";
+            break;
+          case "LUNCH":
+            timeSlotLabel = "점심";
+            break;
+          case "DINNER":
+            timeSlotLabel = "저녁";
+            break;
+          case "SNACK":
+            timeSlotLabel = "간식";
+            break;
+          default:
+            timeSlotLabel = timeSlot || "식단";
         }
 
         let timeStr = "12:00";
@@ -208,18 +217,26 @@ const fetchDailyDiets = async (targetDate: string) => {
               timeStr = `${hours}:${minutes}`;
             }
           } catch (e) {
-             // Fallback handled below
+            // Fallback handled below
           }
         }
-        
+
         // If still default or failed
         if (timeStr === "12:00" && !dateTime) {
-             switch (timeSlot) {
-              case "BREAKFAST": timeStr = "08:00"; break;
-              case "LUNCH": timeStr = "12:30"; break;
-              case "DINNER": timeStr = "19:00"; break;
-              case "SNACK": timeStr = "15:00"; break;
-            }
+          switch (timeSlot) {
+            case "BREAKFAST":
+              timeStr = "08:00";
+              break;
+            case "LUNCH":
+              timeStr = "12:30";
+              break;
+            case "DINNER":
+              timeStr = "19:00";
+              break;
+            case "SNACK":
+              timeStr = "15:00";
+              break;
+          }
         }
 
         let totalCal = diet.totalCalories || 0;
@@ -260,12 +277,18 @@ const fetchDailyDiets = async (targetDate: string) => {
         };
       })
     );
-    
+
     // Group by TimeSlot
     const dietTimelineItems: UnifiedTimelineItem[] = displayedDiets.value.map((diet) => {
-      const desc = diet.items.map((item) => item.name).filter(Boolean).join(", ") || "음식 정보 없음";
-      const nutritionInfo = `탄수화물 ${Math.round(diet.totalCarbs || 0)}g · 단백질 ${Math.round(diet.totalProtein || 0)}g · 지방 ${Math.round(diet.totalFat || 0)}g`;
-      const subDesc = `${diet.totalCalories || 0} kcal · ${nutritionInfo}`;
+      const desc =
+        diet.items
+          .map((item) => item.name)
+          .filter(Boolean)
+          .join(", ") || "음식 정보 없음";
+      const nutritionInfo = `탄수화물 ${formatDecimal(diet.totalCarbs)}g · 단백질 ${formatDecimal(
+        diet.totalProtein
+      )}g · 지방 ${formatDecimal(diet.totalFat)}g`;
+      const subDesc = `${formatDecimal(diet.totalCalories)} kcal · ${nutritionInfo}`;
 
       return {
         type: "MEAL",
@@ -291,11 +314,10 @@ const fetchDailyDiets = async (targetDate: string) => {
     const totalProtein = displayedDiets.value.reduce((sum, d) => sum + (d.totalProtein || 0), 0);
     const totalFat = displayedDiets.value.reduce((sum, d) => sum + (d.totalFat || 0), 0);
 
-    dailyStats.intakeCalories = Math.round(totalCalories);
-    dailyStats.macros.carbs = Math.round(totalCarbs);
-    dailyStats.macros.protein = Math.round(totalProtein);
-    dailyStats.macros.fat = Math.round(totalFat);
-
+    dailyStats.intakeCalories = totalCalories;
+    dailyStats.macros.carbs = totalCarbs;
+    dailyStats.macros.protein = totalProtein;
+    dailyStats.macros.fat = totalFat;
   } catch (e) {
     console.error("❌ [Dashboard] Failed to fetch diet records", e);
     displayedDiets.value = [];
@@ -350,12 +372,12 @@ const fetchDailyExercises = async (targetDate: string) => {
 
       return {
         type: "EXERCISE",
-        id: firstItem.recordId || `group-${timeStr}`, 
+        id: firstItem.recordId || `group-${timeStr}`,
         recordIds: recordIds,
         time: timeStr,
         title: "운동",
         desc: desc,
-        subDesc: `${totalGroupCalories} kcal 소모`,
+        subDesc: `${formatDecimal(totalGroupCalories)} kcal 소모`,
         colorClass: "blue",
         icon: Dumbbell,
       };
@@ -370,11 +392,11 @@ const fetchDailyExercises = async (targetDate: string) => {
     const totalCalories = enhancedRecords.reduce((sum, r) => sum + (r.calories || 0), 0);
     const totalTime = enhancedRecords.reduce((sum, r) => sum + r.durationMinutes, 0);
 
-    dailyStats.exerciseCalories = Math.round(totalCalories);
+    dailyStats.exerciseCalories = totalCalories;
     dailyStats.exerciseTime = Math.round(totalTime);
   } catch (e) {
     console.error("Failed to fetch exercise records", e);
-    // Don't clear timeline here, as it might clear diet items too if not careful, 
+    // Don't clear timeline here, as it might clear diet items too if not careful,
     // but usually fine as we rebuild timeline above.
     // To be safe, just clear exercise part? Actually safer to leave existing or empty.
   }
@@ -407,11 +429,11 @@ const isAiLoading = ref(false);
 
 const loadMealPlan = async () => {
   isAiLoading.value = true;
-  // AI Meal Plan usually takes a date. 
+  // AI Meal Plan usually takes a date.
   // If we want it to react to date change, we should pass currentDate.value.
-  // The original code passed 'today'. Let's stick to 'today' for now unless requested otherwise, 
+  // The original code passed 'today'. Let's stick to 'today' for now unless requested otherwise,
   // as "Today's AI Recommendation" implies today.
-  const today = getTodayDate(); 
+  const today = getTodayDate();
 
   try {
     const res = await aiApi.getMealPlan(today);
@@ -533,7 +555,8 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">섭취 칼로리</div>
           <div class="text-2xl text-white font-bold">
-            {{ dailyStats.intakeCalories }} <span class="text-base text-zinc-500 font-normal">kcal</span>
+            {{ formatDecimal(dailyStats.intakeCalories) }}
+            <span class="text-base text-zinc-500 font-normal">kcal</span>
           </div>
         </div>
 
@@ -542,11 +565,12 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
           <div class="text-zinc-400 text-base">섭취 영양소</div>
           <div class="flex flex-col items-end gap-1">
             <div class="text-2xl text-white font-bold">
-              {{ dailyStats.macros.carbs + dailyStats.macros.protein + dailyStats.macros.fat }}
+              {{ formatDecimal(dailyStats.macros.carbs + dailyStats.macros.protein + dailyStats.macros.fat) }}
               <span class="text-base text-zinc-500 font-normal">g</span>
             </div>
             <div class="text-sm text-zinc-500 font-medium">
-              탄 {{ dailyStats.macros.carbs }} · 단 {{ dailyStats.macros.protein }} · 지 {{ dailyStats.macros.fat }}
+              탄 {{ formatDecimal(dailyStats.macros.carbs) }} · 단 {{ formatDecimal(dailyStats.macros.protein) }} · 지
+              {{ formatDecimal(dailyStats.macros.fat) }}
             </div>
           </div>
         </div>
@@ -555,7 +579,8 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">운동 소모</div>
           <div class="text-2xl text-white font-bold">
-            {{ dailyStats.exerciseCalories }} <span class="text-base text-zinc-500 font-normal">kcal</span>
+            {{ formatDecimal(dailyStats.exerciseCalories) }}
+            <span class="text-base text-zinc-500 font-normal">kcal</span>
           </div>
         </div>
 
@@ -590,7 +615,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             </div>
             <div class="text-white">{{ aiMealPlan.breakfast.menu }}</div>
             <div class="text-sm text-zinc-400">
-              {{ Math.round(aiMealPlan.breakfast.calories) }}kcal · {{ aiMealPlan.breakfast.comment }}
+              {{ formatDecimal(aiMealPlan.breakfast.calories) }}kcal · {{ aiMealPlan.breakfast.comment }}
             </div>
           </div>
 
@@ -601,7 +626,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             </div>
             <div class="text-white">{{ aiMealPlan.lunch.menu }}</div>
             <div class="text-sm text-zinc-400">
-              {{ Math.round(aiMealPlan.lunch.calories) }}kcal · {{ aiMealPlan.lunch.comment }}
+              {{ formatDecimal(aiMealPlan.lunch.calories) }}kcal · {{ aiMealPlan.lunch.comment }}
             </div>
           </div>
 
@@ -612,7 +637,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             </div>
             <div class="text-white">{{ aiMealPlan.dinner.menu }}</div>
             <div class="text-sm text-zinc-400">
-              {{ Math.round(aiMealPlan.dinner.calories) }}kcal · {{ aiMealPlan.dinner.comment }}
+              {{ formatDecimal(aiMealPlan.dinner.calories) }}kcal · {{ aiMealPlan.dinner.comment }}
             </div>
           </div>
         </div>
@@ -672,7 +697,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             <div class="grid grid-cols-3 gap-4 w-full">
               <div class="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
                 <div class="text-xs text-zinc-400">진행도</div>
-                <div class="text-lg font-bold text-emerald-400">{{ currentChallenge.progress }}%</div>
+                <div class="text-lg font-bold text-emerald-400">{{ formatDecimal(currentChallenge.progress) }}%</div>
               </div>
               <div class="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
                 <div class="text-xs text-zinc-400">성공 일수</div>
@@ -702,16 +727,18 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         </div>
 
         <!-- 날짜 네비게이션 (중앙 정렬) -->
-        <div class="flex items-center justify-center md:absolute md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2">
-          <button 
+        <div
+          class="flex items-center justify-center md:absolute md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2"
+        >
+          <button
             @click="changeDate(-1)"
             class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white transition-colors"
           >
             <ChevronLeft class="w-5 h-5" />
           </button>
-          
+
           <div class="relative mx-3">
-            <button 
+            <button
               @click="openDatePicker"
               class="text-white font-medium hover:text-emerald-400 transition-colors flex items-center gap-2"
             >
@@ -725,13 +752,15 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             />
           </div>
 
-          <button 
+          <button
             @click="changeDate(1)"
             :disabled="isToday"
-            :class="cn(
-              'p-1 rounded transition-colors',
-              isToday ? 'text-zinc-600 cursor-not-allowed' : 'text-zinc-400 hover:bg-zinc-700 hover:text-white'
-            )"
+            :class="
+              cn(
+                'p-1 rounded transition-colors',
+                isToday ? 'text-zinc-600 cursor-not-allowed' : 'text-zinc-400 hover:bg-zinc-700 hover:text-white'
+              )
+            "
           >
             <ChevronRight class="w-5 h-5" />
           </button>

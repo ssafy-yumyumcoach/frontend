@@ -173,8 +173,8 @@ const fetchStats = async () => {
     // Handle Nutrition Review
     const handleNutritionReviewFetch = async () => {
       // 1. Data Check: Do we have any diet data to analyze?
-      const hasAnyDietData = (rawDietStats.value || []).some((d: any) => 
-        Number(d.calories) > 0 || Number(d.carbs) > 0 || Number(d.protein) > 0 || Number(d.fat) > 0
+      const hasAnyDietData = (rawDietStats.value || []).some(
+        (d: any) => Number(d.calories) > 0 || Number(d.carbs) > 0 || Number(d.protein) > 0 || Number(d.fat) > 0
       );
 
       if (!hasAnyDietData) {
@@ -219,7 +219,7 @@ const fetchStats = async () => {
         nutritionReview.value = reviewRes.value.data;
         isNutritionReviewLoading.value = false;
       } else {
-        nutritionReview.value = null; 
+        nutritionReview.value = null;
         isNutritionReviewLoading.value = true; // Start loading state
 
         console.log("Starting polling for fresh nutrition review...");
@@ -240,8 +240,8 @@ const fetchStats = async () => {
     // Handle Exercise Review
     const handleExerciseReviewFetch = async () => {
       // 1. Data Check
-       const hasAnyExerciseData = (rawExerciseStats.value || []).some((d: any) => 
-        Number(d.durationMinutes) > 0 || Number(d.calories) > 0
+      const hasAnyExerciseData = (rawExerciseStats.value || []).some(
+        (d: any) => Number(d.durationMinutes) > 0 || Number(d.calories) > 0
       );
 
       if (!hasAnyExerciseData) {
@@ -288,7 +288,7 @@ const fetchStats = async () => {
         exerciseReview.value = exReviewRes.value.data;
         isExerciseReviewLoading.value = false;
       } else {
-        exerciseReview.value = null; 
+        exerciseReview.value = null;
         isExerciseReviewLoading.value = true; // Use explicit loading state
 
         // Start Polling
@@ -350,6 +350,18 @@ const commonOptions: ChartOptions<"bar"> = {
       bodyColor: "#fff",
       borderColor: "#27272a",
       borderWidth: 1,
+      callbacks: {
+        label: function (context: any) {
+          let label = context.dataset.label || "";
+          if (label) {
+            label += ": ";
+          }
+          if (context.parsed.y !== null) {
+            label += Number(context.parsed.y).toFixed(1);
+          }
+          return label;
+        },
+      },
     },
   },
   scales: {
@@ -365,7 +377,7 @@ const commonOptions: ChartOptions<"bar"> = {
 };
 
 // Nutrition Chart Data
-const nutritionChartData = computed<ChartData<"bar" | "line">>(() => {
+const nutritionChartData = computed<ChartData<"bar">>(() => {
   const nutrientKey = selectedNutrient.value as string;
   // nutrientOptions value matches the API keys: carbs, protein, fat, calories
 
@@ -388,7 +400,7 @@ const nutritionChartData = computed<ChartData<"bar" | "line">>(() => {
 });
 
 // Exercise Chart Data
-const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
+const exerciseChartData = computed<ChartData<"bar">>(() => {
   const statKey = selectedExerciseStat.value as string;
   // exerciseStatOptions value matches API keys: durationMinutes, calories
 
@@ -473,9 +485,9 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
 
           <!-- Case 3: No Data or Analysis Failed -->
           <template v-else>
-             <div class="flex-1 flex flex-col items-center justify-center space-y-2 py-8 text-zinc-500">
-               <p>분석할 데이터가 없거나 분석에 실패했습니다.</p>
-             </div>
+            <div class="flex-1 flex flex-col items-center justify-center space-y-2 py-8 text-zinc-500">
+              <p>분석할 데이터가 없거나 분석에 실패했습니다.</p>
+            </div>
           </template>
         </div>
 
@@ -533,9 +545,9 @@ const exerciseChartData = computed<ChartData<"bar" | "line">>(() => {
 
           <!-- Case 3: No Data or Analysis Failed -->
           <template v-else>
-             <div class="flex-1 flex flex-col items-center justify-center space-y-2 py-8 text-zinc-500">
-               <p>분석할 데이터가 없거나 분석에 실패했습니다.</p>
-             </div>
+            <div class="flex-1 flex flex-col items-center justify-center space-y-2 py-8 text-zinc-500">
+              <p>분석할 데이터가 없거나 분석에 실패했습니다.</p>
+            </div>
           </template>
         </div>
       </div>

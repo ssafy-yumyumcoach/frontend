@@ -12,7 +12,10 @@ import Label from "@/components/ui/Label.vue";
 import communityApi, { type PostSummary } from "@/api/community";
 import imageApi from "@/api/image";
 
+import { useAuthStore } from "@/stores/auth";
+
 const router = useRouter();
+const authStore = useAuthStore();
 
 // Feed State
 const posts = ref<PostSummary[]>([]);
@@ -49,6 +52,9 @@ const goToDetail = (postId: number) => {
 };
 
 const goToProfile = (userId: number) => {
+  if (userId === authStore.user?.userId) {
+    return;
+  }
   router.push({ name: "user-profile", params: { id: userId } });
 };
 
@@ -165,11 +171,11 @@ const formatTime = (dateStr: string) => {
       <div
         v-for="post in posts"
         :key="post.postId"
-        class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-700 transition flex min-h-40"
+        class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden cursor-pointer hover:border-zinc-700 transition flex h-48"
         @click="goToDetail(post.postId)"
       >
         <!-- Left Content Section -->
-        <div class="flex-1 p-5 flex flex-col justify-center gap-3 min-w-0">
+        <div class="flex-1 p-5 flex flex-col justify-between gap-3 min-w-0">
           <!-- Top Section: Author + Content -->
           <div>
             <div class="flex items-center gap-3 mb-2">
@@ -196,7 +202,7 @@ const formatTime = (dateStr: string) => {
         </div>
 
         <!-- Right Image Section (With slight padding) -->
-        <div v-if="post.thumbnailUrl || (post.images && post.images.length > 0)" class="w-40 flex-shrink-0 p-2">
+        <div v-if="post.thumbnailUrl || (post.images && post.images.length > 0)" class="w-48 h-full flex-shrink-0 p-2">
           <img
             :src="post.thumbnailUrl || post.images?.[0]"
             class="w-full h-full object-cover rounded-lg bg-zinc-800"

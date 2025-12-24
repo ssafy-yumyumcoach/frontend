@@ -82,7 +82,7 @@ const checkEmail = async () => {
     alert("이메일을 입력해주세요.");
     return;
   }
-  
+
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.value)) {
     alert("올바른 이메일 형식이 아닙니다.");
     return;
@@ -90,7 +90,7 @@ const checkEmail = async () => {
 
   try {
     const response = await api.isEmailAvailable(email.value);
-    // Adjust based on actual API response structure. 
+    // Adjust based on actual API response structure.
     // Assuming response.data.available is boolean.
     isEmailAvailable.value = response.data.available;
     isEmailChecked.value = true;
@@ -134,11 +134,11 @@ const handleSubmit = async () => {
         alert("비밀번호가 일치하지 않습니다.");
         return;
       }
-      
-      await api.signUp({ 
-        email: email.value, 
-        password: password.value, 
-        username: name.value 
+
+      await api.signUp({
+        email: email.value,
+        password: password.value,
+        username: name.value,
       });
 
       // 회원가입 후 자동 로그인
@@ -176,7 +176,7 @@ const handleSubmit = async () => {
           </div>
 
           <div class="space-y-4">
-            <h1 class="text-6xl tracking-tight">냠냠코치</h1>
+            <h1 class="text-6xl tracking-tight">냠발란스</h1>
             <p class="text-2xl text-white/90">
               AI로 식단을 분석하고
               <br />
@@ -226,7 +226,7 @@ const handleSubmit = async () => {
         <!-- Mobile Logo -->
         <div class="lg:hidden flex items-center gap-2 mb-8">
           <Utensils class="w-6 h-6 text-emerald-500" />
-          <span class="text-2xl text-white">냠냠코치</span>
+          <span class="text-2xl text-white">냠발란스</span>
         </div>
 
         <!-- Header -->
@@ -261,8 +261,8 @@ const handleSubmit = async () => {
                 class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700 flex-1"
                 :required="!isLogin"
               />
-              <Button 
-                type="button" 
+              <Button
+                type="button"
                 @click="checkNickname"
                 variant="outline"
                 class="h-12 whitespace-nowrap bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
@@ -271,9 +271,10 @@ const handleSubmit = async () => {
               </Button>
             </div>
             <!-- Validation Message -->
-             <p v-if="nicknameCheckMessage" 
-               class="text-sm"
-               :class="isNicknameAvailable ? 'text-emerald-500' : 'text-red-500'"
+            <p
+              v-if="nicknameCheckMessage"
+              class="text-sm"
+              :class="isNicknameAvailable ? 'text-emerald-500' : 'text-red-500'"
             >
               {{ nicknameCheckMessage }}
             </p>
@@ -290,9 +291,9 @@ const handleSubmit = async () => {
                 class="h-12 bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-600 focus:border-zinc-700 flex-1"
                 required
               />
-              <Button 
+              <Button
                 v-if="!isLogin"
-                type="button" 
+                type="button"
                 @click="checkEmail"
                 variant="outline"
                 class="h-12 whitespace-nowrap bg-zinc-800 border-zinc-700 text-white hover:bg-zinc-700"
@@ -301,9 +302,10 @@ const handleSubmit = async () => {
               </Button>
             </div>
             <!-- Validation Message -->
-            <p v-if="!isLogin && emailCheckMessage" 
-               class="text-sm"
-               :class="isEmailAvailable ? 'text-emerald-500' : 'text-red-500'"
+            <p
+              v-if="!isLogin && emailCheckMessage"
+              class="text-sm"
+              :class="isEmailAvailable ? 'text-emerald-500' : 'text-red-500'"
             >
               {{ emailCheckMessage }}
             </p>
@@ -312,9 +314,6 @@ const handleSubmit = async () => {
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <Label class="text-zinc-300"> 비밀번호 </Label>
-              <a v-if="isLogin" href="#" class="text-sm text-zinc-400 hover:text-white transition-colors">
-                비밀번호 찾기
-              </a>
             </div>
             <div class="relative">
               <Input
