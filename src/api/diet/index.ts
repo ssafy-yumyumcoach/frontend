@@ -115,6 +115,8 @@ export interface GetMyDietDetailResponse {
   items: MyDietItem[];
   createdAt: string; // ISO string (e.g. 2025-12-05T08:30:00)
   updatedAt: string; // ISO string (e.g. 2025-12-05T09:00:00)
+  recordedAt?: string; // 식사 시간 (ISO string)
+  imageUrl?: string; // 이미지 URL (상대 경로)
 }
 
 export default {
