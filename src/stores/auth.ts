@@ -6,6 +6,7 @@ import api from "@/api/axios";
 interface UserInfo {
   email: string;
   username: string;
+  profileImageUrl?: string;
 }
 
 interface LoginResponse {
@@ -185,6 +186,13 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
+  function updateUser(updates: Partial<UserInfo>) {
+    if (user.value) {
+      user.value = { ...user.value, ...updates };
+      localStorage.setItem("user", JSON.stringify(user.value));
+    }
+  }
+
   return {
     user,
     token,
@@ -193,5 +201,6 @@ export const useAuthStore = defineStore("auth", () => {
     logout,
     refreshAccessToken,
     withdraw,
+    updateUser,
   };
 });
