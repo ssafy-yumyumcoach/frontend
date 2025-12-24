@@ -72,6 +72,7 @@ interface FoodItem {
 // State
 const selectedDate = ref(new Date().toISOString().split("T")[0]);
 const selectedTime = ref(new Date().toTimeString().slice(0, 5));
+const existingImageRaw = ref("");
 
 const getMealTypeFromTime = (time: string) => {
   const hour = parseInt(time.split(":")[0], 10);
@@ -224,18 +225,35 @@ const loadDietForEdit = async () => {
   try {
     // getMyDietDetail로 상세 정보 가져오기
     const diet = await dietStore.getMyDietDetail(editDietId.value);
-
+    
     // 날짜 및 시간 설정 (recordedAt 우선)
+    // 날짜 및 시간 설정 (recordedAt 우선)
+    console.log("Edit Diet Loaded:", diet); // Debugging
     if (diet.recordedAt) {
-      const dateTime = new Date(diet.recordedAt);
-      const year = dateTime.getFullYear();
-      const month = String(dateTime.getMonth() + 1).padStart(2, "0");
-      const day = String(dateTime.getDate()).padStart(2, "0");
-      selectedDate.value = `${year}-${month}-${day}`;
+      let datePart = "";
+      let timePart = "";
+      
+      if (diet.recordedAt.includes('T')) {
+          [datePart, timePart] = diet.recordedAt.split('T');
+      } else if (diet.recordedAt.includes(' ')) {
+          [datePart, timePart] = diet.recordedAt.split(' ');
+      }
 
-      const hours = String(dateTime.getHours()).padStart(2, "0");
-      const minutes = String(dateTime.getMinutes()).padStart(2, "0");
-      selectedTime.value = `${hours}:${minutes}`;
+      if (datePart && timePart) {
+          selectedDate.value = datePart;
+          selectedTime.value = timePart.substring(0, 5);
+      } else {
+          const dateTime = new Date(diet.recordedAt);
+          if (!isNaN(dateTime.getTime())) {
+            const year = dateTime.getFullYear();
+            const month = String(dateTime.getMonth() + 1).padStart(2, "0");
+            const day = String(dateTime.getDate()).padStart(2, "0");
+            selectedDate.value = `${year}-${month}-${day}`;
+            const hours = String(dateTime.getHours()).padStart(2, "0");
+            const minutes = String(dateTime.getMinutes()).padStart(2, "0");
+            selectedTime.value = `${hours}:${minutes}`;
+          }
+      }
     } else {
       // recordedAt 없으면 date 사용
       if (diet.date) {
@@ -244,10 +262,21 @@ const loadDietForEdit = async () => {
 
       // 시간은 createdAt 또는 timeSlot 기본값 사용
       if (diet.createdAt) {
-        const dateTime = new Date(diet.createdAt);
-        const hours = String(dateTime.getHours()).padStart(2, "0");
-        const minutes = String(dateTime.getMinutes()).padStart(2, "0");
-        selectedTime.value = `${hours}:${minutes}`;
+         let timePart = "";
+         if (diet.createdAt.includes('T')) {
+             timePart = diet.createdAt.split('T')[1];
+         } else if (diet.createdAt.includes(' ')) {
+             timePart = diet.createdAt.split(' ')[1];
+         }
+         
+         if (timePart) {
+             selectedTime.value = timePart.substring(0, 5);
+         } else {
+            const dateTime = new Date(diet.createdAt);
+            const hours = String(dateTime.getHours()).padStart(2, "0");
+            const minutes = String(dateTime.getMinutes()).padStart(2, "0");
+            selectedTime.value = `${hours}:${minutes}`;
+         }
       } else {
         // createdAt도 없으면 timeSlot에 따라 기본 시간 설정
         switch (diet.timeSlot) {
@@ -369,6 +398,7 @@ const loadDietForEdit = async () => {
 
     // 이미지 설정
     if (diet.imageUrl) {
+      existingImageRaw.value = diet.imageUrl;
       // CloudFront 도메인 명시
       const cloudfrontDomain = "https://d3sn2183nped6z.cloudfront.net/";
       // 이미 절대 경로(http)라면 그대로, 아니면 도메인 붙이기
@@ -642,18 +672,24 @@ const handleSave = async () => {
   }
 
   try {
-    let imageKey = "";
+    let finalImageUrl: string | undefined = undefined;
 
     // 1. Upload new image if selected
     if (selectedImageFile.value) {
       try {
         const key = await imageApi.uploadImage(selectedImageFile.value, "DIET");
-        imageKey = key;
+        finalImageUrl = key;
       } catch (e) {
         console.error("Image upload failed", e);
         saveErrorMessage.value = "사진 업로드에 실패했습니다. 사진 없이 저장하거나 다시 시도해주세요.";
         return;
       }
+    } else if (hasPhoto.value && existingImageRaw.value) {
+      // 기존 이미지 유지 (새 파일 없고, hasPhoto true, 기존 경로 존재)
+      finalImageUrl = existingImageRaw.value;
+    } else if (!hasPhoto.value) {
+      // 이미지 삭제 (hasPhoto false)
+      finalImageUrl = "";
     }
 
     if (isEditMode.value && editDietId.value) {
@@ -671,10 +707,11 @@ const handleSave = async () => {
         recordedAt: dateWithTime,
         mealType: toTimeSlot(selectedMealType.value) as DietTimeSlot,
         items: updatePayload,
-        imageUrl: imageKey || undefined,
+        imageUrl: finalImageUrl,
       };
 
       await dietStore.updateMyDiet(editDietId.value, updatePayloadData);
+      alert("식단이 수정되었습니다.");
     } else {
       // 생성 모드
       const dateWithTime = `${selectedDate.value}T${selectedTime.value}:00`;
@@ -687,7 +724,7 @@ const handleSave = async () => {
           serveCount: f.amount / 100,
           orderIndex: index + 1,
         })),
-        imageUrl: imageKey || undefined,
+        imageUrl: finalImageUrl,
       };
 
       await dietStore.createMyDiet(payload);
@@ -738,7 +775,11 @@ const handleSave = async () => {
         </div>
 
         <!-- 끼니 선택 -->
-        <ToggleGroup v-model="selectedMealType" :options="mealTypeOptions" class="h-10" />
+        <ToggleGroup 
+          v-model="selectedMealType" 
+          :options="mealTypeOptions" 
+          class="h-10" 
+        />
       </div>
     </div>
 

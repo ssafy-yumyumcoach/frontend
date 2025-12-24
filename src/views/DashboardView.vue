@@ -9,6 +9,7 @@ import aiApi, { type MealPlanResponse } from "@/api/ai/index";
 import statsApi from "@/api/stats";
 import challengeApi, { type ChallengeSummary } from "@/api/challenge";
 import { cn, formatDecimal } from "@/lib/utils";
+import Dialog from "@/components/ui/Dialog.vue";
 
 const router = useRouter();
 const dietStore = useDietStore();
@@ -42,6 +43,15 @@ interface UnifiedTimelineItem {
   colorClass: string; // "emerald" | "blue" etc.
   icon: any; // Icon component
   imageUrl?: string;
+  items?: Array<{
+    name: string;
+    amount?: number; // for Food (g)
+    duration?: number; // for Exercise (min)
+    calories: number;
+    carbs?: number;
+    protein?: number;
+    fat?: number;
+  }>;
 }
 
 const timelineItems = ref<UnifiedTimelineItem[]>([]);
@@ -335,11 +345,20 @@ const fetchDailyDiets = async (targetDate: string) => {
         colorClass: "emerald",
         icon: Utensils,
         imageUrl: diet.imageUrl,
+        items: diet.items.map((item) => ({
+          name: item.name,
+          amount: item.amount,
+          calories: item.calories,
+          carbs: item.carbs,
+          protein: item.protein,
+          fat: item.fat,
+        })),
       };
     });
 
     const exerciseTimelineItems = timelineItems.value.filter((item) => item.type === "EXERCISE");
     timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) => a.time.localeCompare(b.time));
+
 
     // Update stats
     const totalCalories = displayedDiets.value.reduce((sum, d) => sum + (d.totalCalories || 0), 0);
@@ -413,9 +432,17 @@ const fetchDailyExercises = async (targetDate: string) => {
         subDesc: `${formatDecimal(totalGroupCalories)} kcal 소모`,
         colorClass: "blue",
         icon: Dumbbell,
+        items: group.map((r) => ({
+          name: r.exerciseName,
+          duration: r.durationMinutes,
+          calories: r.calories || 0,
+        })),
       };
     });
-
+    
+    // DietItems 처리 시 중복 발생 방지를 위해 필터링하지 않고, 새로 생성된 dietItems와 exerciseItems를 합칩니다.
+    // 하지만 여기서는 flow상 dietItems가 이미 존재하는 상태에서 exercise를 fetch하는 로직이므로,
+    // 기존 dietItems를 유지하고 exerciseItems만 새로 갈아끼우는 것이 맞습니다.
     const dietTimelineItems = timelineItems.value.filter((item) => item.type === "MEAL");
     timelineItems.value = [...dietTimelineItems, ...exerciseTimelineItems].sort((a, b) => {
       return a.time.localeCompare(b.time);
@@ -570,6 +597,50 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
   } catch (e) {
     console.error("Failed to delete records", e);
     alert("운동 기록 삭제에 실패했습니다.");
+  }
+};
+
+// --- Detail Dialog Logic ---
+const selectedTimelineItem = ref<UnifiedTimelineItem | null>(null);
+const isDietDialogOpen = ref(false);
+const isExerciseDialogOpen = ref(false);
+
+const openDetail = (item: UnifiedTimelineItem) => {
+  selectedTimelineItem.value = item;
+  if (item.type === "MEAL") {
+    isDietDialogOpen.value = true;
+  } else {
+    isExerciseDialogOpen.value = true;
+  }
+};
+
+const handleEditDetail = () => {
+  if (!selectedTimelineItem.value) return;
+  const item = selectedTimelineItem.value;
+
+  if (item.type === "MEAL" && typeof item.id === "number") {
+    router.push({
+      path: "/meal-register",
+      query: { mode: "edit", dietId: item.id },
+    });
+  } else if (item.type === "EXERCISE" && item.recordIds) {
+    router.push({
+      path: "/exercise-register",
+      query: { mode: "edit", ids: item.recordIds.join(",") },
+    });
+  }
+};
+
+const handleDeleteDetail = async () => {
+  if (!selectedTimelineItem.value) return;
+  const item = selectedTimelineItem.value;
+
+  if (item.type === "MEAL" && typeof item.id === "number") {
+    await handleDeleteDiet(item.id);
+    isDietDialogOpen.value = false;
+  } else if (item.type === "EXERCISE" && item.recordIds) {
+    await handleDeleteExercise(item.recordIds);
+    isExerciseDialogOpen.value = false;
   }
 };
 </script>
@@ -825,7 +896,10 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
               :class="item.colorClass === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500'"
             ></div>
 
-            <div class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5">
+            <div 
+              class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl p-5 cursor-pointer hover:bg-zinc-700/50 transition-colors"
+              @click="openDetail(item)"
+            >
               <div class="flex items-start gap-4">
                 <div
                   class="w-28 h-28 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden"
@@ -854,47 +928,6 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
                   </h3>
                   <p class="text-zinc-300">{{ item.desc }}</p>
                   <p class="text-sm text-zinc-400">{{ item.subDesc }}</p>
-                  <div class="flex gap-4 pt-2">
-                    <button
-                      v-if="item.type === 'EXERCISE' && item.recordIds"
-                      @click="
-                        router.push({
-                          path: '/exercise-register',
-                          query: { mode: 'edit', ids: item.recordIds.join(',') },
-                        })
-                      "
-                      class="text-sm text-zinc-400 hover:text-white transition-colors"
-                    >
-                      수정
-                    </button>
-                    <button
-                      v-if="item.type === 'EXERCISE' && item.recordIds"
-                      @click="handleDeleteExercise(item.recordIds)"
-                      class="text-sm text-zinc-400 hover:text-red-400 transition-colors"
-                    >
-                      삭제
-                    </button>
-                    <button
-                      v-if="item.type === 'MEAL' && typeof item.id === 'number'"
-                      @click="
-                        router.push({
-                          path: '/meal-register',
-                          query: { mode: 'edit', dietId: item.id },
-                        })
-                      "
-                      class="text-sm text-zinc-400 hover:text-white transition-colors"
-                    >
-                      수정
-                    </button>
-                    <button
-                      v-if="item.type === 'MEAL' && typeof item.id === 'number'"
-                      @click="handleDeleteDiet(item.id)"
-                      :disabled="dietStore.isDeleting"
-                      class="text-sm text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-50"
-                    >
-                      {{ dietStore.isDeleting ? "삭제 중..." : "삭제" }}
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -908,5 +941,91 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         </div>
       </div>
     </div>
+
+    <!-- Diet Detail Dialog -->
+    <Dialog v-model:open="isDietDialogOpen">
+      <div class="space-y-6" v-if="selectedTimelineItem">
+        <div class="flex items-center gap-2">
+           <Utensils class="w-5 h-5 text-emerald-500" />
+           <h3 class="text-xl text-white font-bold">{{ selectedTimelineItem.title }} 상세</h3>
+        </div>
+
+        <!-- Image -->
+        <div v-if="selectedTimelineItem.imageUrl" class="w-full aspect-video bg-zinc-950 rounded-lg overflow-hidden">
+             <img :src="selectedTimelineItem.imageUrl" class="w-full h-full object-contain" />
+        </div>
+
+        <div class="space-y-4">
+             <div class="flex justify-between items-end border-b border-zinc-700 pb-2">
+                <span class="text-sm text-zinc-400">{{ formattedDate }} {{ selectedTimelineItem.time }}</span>
+                <span class="text-emerald-400 font-bold text-lg">{{ selectedTimelineItem.subDesc.split(' · ')[0] }}</span> 
+             </div>
+
+             <!-- Food List -->
+             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                <div v-for="(item, idx) in selectedTimelineItem.items" :key="idx" class="bg-zinc-800/50 rounded-lg p-3">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-white font-medium">{{ item.name }}</span>
+                        <span class="text-zinc-300 text-sm">{{ item.calories }} kcal</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xs text-zinc-500">
+                        <span>{{ (item.amount || 0) / 100 }}인분</span>
+                        <span v-if="item.carbs !== undefined">
+                            탄수화물 {{ formatDecimal(item.carbs) }}g · 단백질 {{ formatDecimal(item.protein) }}g · 지방 {{ formatDecimal(item.fat) }}g
+                        </span>
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <div class="flex gap-3 justify-end pt-4 border-t border-zinc-800">
+             <Button variant="ghost" class="text-zinc-400 hover:text-white hover:bg-zinc-800" @click="handleEditDetail">
+                수정
+             </Button>
+             <Button variant="ghost" class="text-red-500 hover:text-red-400 hover:bg-red-500/10" @click="handleDeleteDetail">
+                삭제
+             </Button>
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- Exercise Detail Dialog -->
+    <Dialog v-model:open="isExerciseDialogOpen">
+      <div class="space-y-6" v-if="selectedTimelineItem">
+        <div class="flex items-center gap-2">
+           <Dumbbell class="w-5 h-5 text-blue-500" />
+           <h3 class="text-xl text-white font-bold">{{ selectedTimelineItem.title }} 상세</h3>
+        </div>
+
+        <div class="space-y-4">
+             <div class="flex justify-between items-end border-b border-zinc-700 pb-2">
+                <span class="text-sm text-zinc-400">{{ formattedDate }} {{ selectedTimelineItem.time }}</span>
+                <span class="text-blue-400 font-bold text-lg">{{ selectedTimelineItem.subDesc }}</span>
+             </div>
+
+             <!-- Exercise List -->
+             <div class="space-y-3 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                <div v-for="(item, idx) in selectedTimelineItem.items" :key="idx" class="bg-zinc-800/50 rounded-lg p-3 flex justify-between items-center">
+                    <div>
+                        <div class="text-white font-medium">{{ item.name }}</div>
+                        <div class="text-xs text-zinc-500">{{ item.duration }}분</div>
+                    </div>
+                    <div class="text-zinc-300 text-sm font-bold">
+                        {{ item.calories }} kcal
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <div class="flex gap-3 justify-end pt-4 border-t border-zinc-800">
+             <Button variant="ghost" class="text-zinc-400 hover:text-white hover:bg-zinc-800" @click="handleEditDetail">
+                수정
+             </Button>
+             <Button variant="ghost" class="text-red-500 hover:text-red-400 hover:bg-red-500/10" @click="handleDeleteDetail">
+                삭제
+             </Button>
+        </div>
+      </div>
+    </Dialog>
   </div>
 </template>
