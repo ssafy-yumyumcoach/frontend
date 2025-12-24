@@ -1,16 +1,16 @@
-import axios, { type InternalAxiosRequestConfig, type AxiosError } from 'axios';
+import axios, { type InternalAxiosRequestConfig, type AxiosError } from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api', // Default fallback
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api", // Default fallback
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
 // Request interceptor to add token
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -24,7 +24,7 @@ let isRefreshing = false;
 let failedQueue: any[] = [];
 
 const processQueue = (error: any, token: string | null = null) => {
-  failedQueue.forEach(prom => {
+  failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
     } else {
@@ -40,24 +40,25 @@ api.interceptors.response.use(
     const originalRequest: any = error.config;
 
     // Check if error is 401 and we haven't tried refreshing yet
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Also exclude login request from this logic to avoid "Session Expired" on bad credentials
+    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.includes("/auth/sign-in")) {
       if (isRefreshing) {
         // If already refreshing, queue this request
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
-          .then(token => {
+          .then((token) => {
             originalRequest.headers.Authorization = `Bearer ${token}`;
             return api(originalRequest);
           })
-          .catch(err => Promise.reject(err));
+          .catch((err) => Promise.reject(err));
       }
 
       originalRequest._retry = true;
       isRefreshing = true;
 
       // Dynamically import auth store to avoid circular dependency
-      const { useAuthStore } = await import('@/stores/auth');
+      const { useAuthStore } = await import("@/stores/auth");
       const authStore = useAuthStore();
 
       try {
@@ -69,38 +70,38 @@ api.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return api(originalRequest);
         } else {
-          processQueue(new Error('Token refresh failed'), null);
+          processQueue(new Error("Token refresh failed"), null);
           // Redirect to login (preserve a one-time message)
           try {
             sessionStorage.setItem(
-              'flash_message',
+              "flash_message",
               JSON.stringify({
-                type: 'error',
-                message: '세션이 만료되었습니다. 다시 로그인해주세요.',
+                type: "error",
+                message: "세션이 만료되었습니다. 다시 로그인해주세요.",
                 at: Date.now(),
               })
             );
           } catch {
             // ignore storage errors
           }
-          window.location.href = '/';
+          window.location.href = "/";
           return Promise.reject(error);
         }
       } catch (refreshError) {
         processQueue(refreshError, null);
         try {
           sessionStorage.setItem(
-            'flash_message',
+            "flash_message",
             JSON.stringify({
-              type: 'error',
-              message: '세션이 만료되었습니다. 다시 로그인해주세요.',
+              type: "error",
+              message: "세션이 만료되었습니다. 다시 로그인해주세요.",
               at: Date.now(),
             })
           );
         } catch {
           // ignore storage errors
         }
-        window.location.href = '/';
+        window.location.href = "/";
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
