@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
 import api from "@/api/axios";
+import userApi from "@/api/user";
 
 interface UserInfo {
   email: string;
@@ -58,6 +59,9 @@ export const useAuthStore = defineStore("auth", () => {
       localStorage.setItem("token", accessToken);
       localStorage.setItem("refreshToken", newRefreshToken);
       localStorage.setItem("user", JSON.stringify(userInfo));
+
+      // Fetch full profile to get profileImageUrl (if missing in login response)
+      await fetchCurrentUser();
 
       return true;
     } catch (error: any) {
@@ -193,6 +197,33 @@ export const useAuthStore = defineStore("auth", () => {
     }
   }
 
+  async function fetchCurrentUser() {
+    try {
+      // Do not fetch if no token
+      if (!token.value) return;
+
+      const res = await userApi.getMyPage();
+      const basic = res.data.basic;
+
+      const updates: any = {};
+      if (basic.username) updates.username = basic.username;
+      if (basic.email) updates.email = basic.email;
+
+      if (basic.profileImageUrl) {
+        const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
+        let imgUrl = basic.profileImageUrl;
+        if (imgUrl.includes(cdnDomain + cdnDomain)) {
+          imgUrl = imgUrl.replace(cdnDomain + cdnDomain, cdnDomain);
+        }
+        updates.profileImageUrl = imgUrl;
+      }
+
+      updateUser(updates);
+    } catch (error) {
+      console.error("Failed to fetch current user:", error);
+    }
+  }
+
   return {
     user,
     token,
@@ -202,5 +233,6 @@ export const useAuthStore = defineStore("auth", () => {
     refreshAccessToken,
     withdraw,
     updateUser,
+    fetchCurrentUser,
   };
 });
