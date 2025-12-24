@@ -618,7 +618,7 @@ const getDifficultyColor = (difficulty: string) => {
           <div class="flex-1 space-y-6 w-full text-center md:text-left">
             <!-- 1. Nickname & Badge & Email -->
             <div class="space-y-2">
-              <div class="flex flex-col md:flex-row items-center md:items-end gap-3 justify-center md:justify-start">
+              <div class="flex flex-col md:flex-row items-center md:items-end gap-10 justify-center md:justify-start">
                 <!-- Nickname Input -->
                 <div class="relative">
                   <input
@@ -632,7 +632,15 @@ const getDifficultyColor = (difficulty: string) => {
                 <!-- Badge Pill -->
                 <span
                   v-if="currentTitleId"
-                  class="text-sm px-2 py-1 rounded bg-zinc-800 text-zinc-400 font-normal border border-zinc-700 mb-1"
+                  class="text-sm px-3 py-1 rounded border mb-1 transition-colors"
+                  :class="[
+                    (() => {
+                      const badge = badges.find((b) => b.id === String(currentTitleId));
+                      return badge?.difficulty
+                        ? getDifficultyColor(badge.difficulty)
+                        : 'bg-zinc-800 text-zinc-400 border-zinc-700';
+                    })(),
+                  ]"
                 >
                   {{ badges.find((b) => b.id === String(currentTitleId))?.name || currentTitleName || "대표 뱃지" }}
                 </span>
