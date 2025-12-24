@@ -88,8 +88,9 @@ export interface MyDietItem {
   dietItemId: number;
   foodId: number;
   name: string;
-  amount: number;
-  unit: string;
+  amount?: number; // 구버전 필드
+  serveCount?: number; // 신버전 필드 (인분 단위)
+  unit?: string;
   calories: number;
 }
 

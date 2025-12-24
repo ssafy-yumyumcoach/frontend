@@ -287,7 +287,13 @@ const loadDietForEdit = async () => {
     if (diet.items && Array.isArray(diet.items)) {
       foods.value = await Promise.all(
         diet.items.map(async (item, idx: number) => {
-          const amount = item.amount || 100;
+          // 백엔드 응답이 serveCount로 올 경우 (item.amount가 없으면) 100g 단위로 변환
+          // serveCount: 1.0 => 100g, 2.0 => 200g
+          let amount = item.amount || 100;
+          if (!item.amount && item.serveCount) {
+            amount = item.serveCount * 100;
+          }
+
           let baseCalories = 0;
           let baseCarbs = 0;
           let baseProtein = 0;
@@ -309,8 +315,20 @@ const loadDietForEdit = async () => {
               // 최신 음식 이름으로 업데이트 (DB 기준)
               foodName = foodDetail.name;
             } catch (e) {
-              // 조회 실패 시 저장된 calories를 100g 기준으로 가정
-              baseCalories = item.calories || 0;
+              // 조회 실패 시 저장된 calories를 바탕으로 baseCalories(100g 기준) 역산
+              // item.calories는 해당 amount(예: 200g)에 대한 칼로리일 수 있음
+              // 따라서 baseCalories = item.calories / (amount / 100)
+              const savedCalories = item.calories || 0;
+
+              // serveCount가 존재하면 item.calories를 1인분(100g) 기준 Unit 칼로리로 간주
+              if (item.serveCount) {
+                baseCalories = savedCalories;
+              } else {
+                // 구버전: 저장된 칼로리가 Total이므로 역산
+                const ratio = amount > 0 ? amount / 100 : 1;
+                baseCalories = savedCalories / ratio;
+              }
+
               baseCarbs = 0;
               baseProtein = 0;
               baseFat = 0;

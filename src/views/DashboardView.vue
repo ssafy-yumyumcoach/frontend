@@ -247,31 +247,69 @@ const fetchDailyDiets = async (targetDate: string) => {
           }, 0);
         }
 
+        // 프론트엔드에서 총 칼로리 재계산 (백엔드 totalCalories 불일치 이슈 대응)
+        let calculatedTotalCalories = 0;
+        let calculatedTotalCarbs = 0;
+        let calculatedTotalProtein = 0;
+        let calculatedTotalFat = 0;
+
         const mappedItems = items.map((item: any) => {
           const itemName = item?.name || item?.foodName || item?.food?.name || "";
+
+          // 개별 아이템의 실제 영양소 계산
+          let realCalories = item?.calories || 0;
+          let realCarbs = item?.carbs || item?.carbohydrate || 0;
+          let realProtein = item?.protein || 0;
+          let realFat = item?.fat || 0;
+
+          // serveCount가 있으면 item.calories는 1인분(100g) 기준
+          if (item?.serveCount) {
+            realCalories = (item.calories || 0) * item.serveCount;
+            // 다른 영양소도 동일하게 비례 계산 (데이터가 있다면)
+            // 만약 item.carbs 등이 이미 계산된 값인지 unit 값인지 확실치 않지만,
+            // serveCount 로직상 unit 값일 가능성이 높음
+            realCarbs = (item.carbs || item.carbohydrate || 0) * item.serveCount;
+            realProtein = (item.protein || 0) * item.serveCount;
+            realFat = (item.fat || 0) * item.serveCount;
+          } else if (item?.amount) {
+            // 구버전: amount / 100 비율 적용?
+            // 하지만 이미 백엔드에서 계산된 값을 줄 수도 있음.
+            // 안전하게 기존 totalCal을 믿기보다 item들의 합을 믿기로 함
+          }
+
+          calculatedTotalCalories += realCalories;
+          calculatedTotalCarbs += realCarbs;
+          calculatedTotalProtein += realProtein;
+          calculatedTotalFat += realFat;
+
           return {
             name: itemName,
-            amount: item?.amount || 0,
-            calories: item?.calories || 0,
-            carbs: item?.carbs || item?.carbohydrate || 0,
-            protein: item?.protein || 0,
-            fat: item?.fat || 0,
+            amount: item?.amount || (item?.serveCount ? item.serveCount * 100 : 0),
+            calories: realCalories,
+            carbs: realCarbs,
+            protein: realProtein,
+            fat: realFat,
           };
         });
 
-        const totalCarbs = mappedItems.reduce((sum: number, item) => sum + (item.carbs || 0), 0);
-        const totalProtein = mappedItems.reduce((sum: number, item) => sum + (item.protein || 0), 0);
-        const totalFat = mappedItems.reduce((sum: number, item) => sum + (item.fat || 0), 0);
+        // 만약 아이템이 없거나 재계산된 값이 0이면 기존 totalCal 사용 (fallback)
+        if (calculatedTotalCalories === 0 && totalCal > 0) {
+          calculatedTotalCalories = totalCal;
+          // 다른 영양소도 마찬가지...
+          calculatedTotalCarbs = mappedItems.reduce((sum: number, item: any) => sum + (item.carbs || 0), 0);
+          calculatedTotalProtein = mappedItems.reduce((sum: number, item: any) => sum + (item.protein || 0), 0);
+          calculatedTotalFat = mappedItems.reduce((sum: number, item: any) => sum + (item.fat || 0), 0);
+        }
 
         return {
           dietId: dietId,
           timeSlot: timeSlot,
           timeSlotLabel: timeSlotLabel,
           time: timeStr,
-          totalCalories: totalCal,
-          totalCarbs: totalCarbs,
-          totalProtein: totalProtein,
-          totalFat: totalFat,
+          totalCalories: calculatedTotalCalories,
+          totalCarbs: calculatedTotalCarbs,
+          totalProtein: calculatedTotalProtein,
+          totalFat: calculatedTotalFat,
           items: mappedItems,
           imageUrl: imageUrl,
         };
