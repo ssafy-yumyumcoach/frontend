@@ -8,6 +8,7 @@ import Input from "@/components/ui/Input.vue";
 import Textarea from "@/components/ui/Textarea.vue";
 import Dialog from "@/components/ui/Dialog.vue";
 import Label from "@/components/ui/Label.vue";
+import Select from "@/components/ui/Select.vue"; // Added Select
 
 import communityApi, { type PostSummary } from "@/api/community";
 import imageApi from "@/api/image";
@@ -22,9 +23,10 @@ const authStore = useAuthStore();
 const posts = ref<PostSummary[]>([]);
 const isLoading = ref(false);
 const searchKeyword = ref("");
+const searchType = ref("all"); // 'all' (Title+Content) | 'title'
 const currentPage = ref(1);
 const totalPosts = ref(0);
-const pageSize = 20;
+const pageSize = 10;
 
 const totalPages = computed(() => {
   return Math.max(1, Math.ceil(totalPosts.value / pageSize));
@@ -38,12 +40,16 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const selectedImages = ref<{ file: File; preview: string }[]>([]);
 
 // --- Search / Fetch ---
-// --- Search / Fetch ---
 const handleSearch = () => {
   const query: any = {};
   if (searchKeyword.value.trim()) {
     query.keyword = searchKeyword.value.trim();
   }
+  // 검색 조건도 URL에 포함
+  if (searchType.value !== "all") {
+    query.type = searchType.value;
+  }
+  
   // 검색 시 1페이지로 이동
   query.page = 1;
   router.push({ query });
@@ -52,6 +58,12 @@ const handleSearch = () => {
 const handlePageChange = (page: number) => {
   if (page < 1 || page > totalPages.value) return;
   const query: any = { ...route.query, page };
+  
+  // type도 유지 (이미 route.query에 있으면 유지되지만 명시적으로 처리 가능)
+  if (searchType.value !== "all") {
+    query.type = searchType.value;
+  }
+
   router.push({ query });
 };
 
@@ -59,18 +71,22 @@ const fetchPosts = async () => {
   isLoading.value = true;
   try {
     const keywordFromUrl = route.query.keyword as string;
+    const typeFromUrl = (route.query.type as string) || "all";
     const pageFromUrl = Number(route.query.page) || 1;
 
     // Sync state
     currentPage.value = pageFromUrl;
+    searchType.value = typeFromUrl;
 
+    // Explicitly construct URL to debug parameter issues
     const params: any = {
-      page: pageFromUrl - 1, // API is 0-based
+      page: pageFromUrl,
       size: pageSize,
     };
-
+    
     if (keywordFromUrl) {
       params.keyword = keywordFromUrl;
+      // Also sync keyword input if needed
       if (searchKeyword.value !== keywordFromUrl) {
         searchKeyword.value = keywordFromUrl;
       }
@@ -80,8 +96,11 @@ const fetchPosts = async () => {
       }
     }
 
+    // backend doesn't support 'type' param filtering probably, but we can pass it if it did.
+    // Assuming backend ignores unknown params or we handle client side.
+    
     const response = await communityApi.getPosts(params);
-    console.log("Posts Data:", response.data);
+    // console.log("Posts Data:", response.data);
 
     // 백엔드에서 필터링이 안 될 경우를 대비한 클라이언트 사이드 필터링 (임시)
     // 페이지네이션과 함께 동작하려면 백엔드 필터링이 필수적이지만, 현재 상황 유지
@@ -89,11 +108,17 @@ const fetchPosts = async () => {
     if (params.keyword) {
       const k = params.keyword.toLowerCase();
       fetchedPosts = fetchedPosts.filter((p) => {
-        return (
-          p.title.toLowerCase().includes(k) ||
-          (p.content && p.content.toLowerCase().includes(k)) ||
-          (p.contentPreview && p.contentPreview.toLowerCase().includes(k))
-        );
+        const inTitle = p.title.toLowerCase().includes(k);
+        const inContent = 
+          (p.content && p.content.toLowerCase().includes(k)) || 
+          (p.contentPreview && p.contentPreview.toLowerCase().includes(k));
+
+        if (searchType.value === "title") {
+          return inTitle;
+        } else {
+          // 'all': Title OR Content
+          return inTitle || inContent;
+        }
       });
     }
 
@@ -107,7 +132,7 @@ const fetchPosts = async () => {
 };
 
 watch(
-  () => [route.query.keyword, route.query.page],
+  () => [route.query.keyword, route.query.page, route.query.type],
   () => {
     fetchPosts();
   }
@@ -117,6 +142,9 @@ onMounted(() => {
   // 초기 로드 시 URL 파라미터 확인
   if (route.query.keyword) {
     searchKeyword.value = route.query.keyword as string;
+  }
+  if (route.query.type) {
+    searchType.value = route.query.type as string;
   }
   fetchPosts();
 });
@@ -229,7 +257,7 @@ const formatTime = (dateStr: string) => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6 pb-24">
     <!-- Header & Write Button -->
     <div class="flex items-center justify-between">
       <h2 class="text-2xl text-white">전체 피드</h2>
@@ -241,6 +269,18 @@ const formatTime = (dateStr: string) => {
 
     <!-- Search Bar -->
     <div class="flex gap-2">
+      <!-- Search Type Select -->
+      <div class="w-32">
+        <Select
+          v-model="searchType"
+          :options="[
+            { label: '제목+내용', value: 'all' },
+            { label: '제목', value: 'title' },
+          ]"
+          class="bg-zinc-900 border-zinc-800 text-white h-10"
+        />
+      </div>
+
       <div class="relative flex-1">
         <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
         <Input
@@ -303,7 +343,7 @@ const formatTime = (dateStr: string) => {
       </div>
 
       <!-- Pagination -->
-      <div v-if="totalPages > 1" class="flex justify-center items-center gap-2 py-8">
+      <div v-if="totalPages >= 1 && totalPosts > 0" class="flex justify-center items-center gap-2 py-8">
         <Button
           variant="outline"
           size="icon"
@@ -320,12 +360,7 @@ const formatTime = (dateStr: string) => {
             :key="page"
             variant="ghost"
             size="sm"
-            :class="[
-              'w-8 h-8 p-0',
-              currentPage === page
-                ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800',
-            ]"
+            :class="`w-8 h-8 p-0 ${currentPage === page ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`"
             @click="handlePageChange(page)"
           >
             {{ page }}
