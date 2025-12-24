@@ -17,7 +17,7 @@ import {
   type UpdateMyDietRequest,
 } from "@/api/diet";
 import statsApi from "@/api/stats";
-import { formatNutrition } from "@/lib/utils";
+import { formatDecimal } from "@/lib/utils";
 import detectionApi, { type DetectionResult } from "@/api/detection";
 import imageApi from "@/api/image/index";
 
@@ -174,7 +174,7 @@ const filteredFoodOptions = computed(() => {
   }
   // API에서 이미 검색어로 필터링된 결과를 반환하므로, 추가 필터링 없이 그대로 사용
   return foodsStore.foods.map((f) => ({
-    label: `${f.name} · ${formatNutrition(f.calories)}kcal`,
+    label: `${f.name} · ${formatDecimal(f.calories)}kcal`,
     value: String(f.id),
     food: f,
   }));
@@ -799,9 +799,8 @@ const handleSave = async () => {
                 >
                   <div class="text-white text-sm font-medium">{{ option.food.name }}</div>
                   <div class="text-zinc-400 text-xs mt-1">
-                    {{ formatNutrition(option.food.calories) }}kcal · 탄
-                    {{ formatNutrition(option.food.carbohydrate) }}g · 단백질
-                    {{ formatNutrition(option.food.protein) }}g · 지방 {{ formatNutrition(option.food.fat) }}g
+                    {{ formatDecimal(option.food.calories) }}kcal · 탄 {{ formatDecimal(option.food.carbohydrate) }}g ·
+                    단백질 {{ formatDecimal(option.food.protein) }}g · 지방 {{ formatDecimal(option.food.fat) }}g
                   </div>
                 </div>
               </div>
@@ -873,8 +872,8 @@ const handleSave = async () => {
 
               <!-- 영양 정보 요약 -->
               <div class="text-sm text-zinc-400">
-                {{ formatNutrition(food.calories) }} kcal · 탄 {{ formatNutrition(food.carbs) }}g · 단백질
-                {{ formatNutrition(food.protein) }}g · 지방 {{ formatNutrition(food.fat) }}g
+                {{ formatDecimal(food.calories) }} kcal · 탄 {{ formatDecimal(food.carbs) }}g · 단백질
+                {{ formatDecimal(food.protein) }}g · 지방 {{ formatDecimal(food.fat) }}g
               </div>
             </div>
           </div>
@@ -890,11 +889,11 @@ const handleSave = async () => {
           <h3 class="text-xl text-white">오늘 {{ mealTypeLabel }} 식단 요약</h3>
           <div class="space-y-2">
             <p class="text-2xl text-emerald-400">
-              총 섭취 예상 칼로리: {{ formatNutrition(totalNutrition.calories) }} kcal
+              총 섭취 예상 칼로리: {{ formatDecimal(totalNutrition.calories) }} kcal
             </p>
             <p class="text-zinc-300">
-              탄수화물: {{ formatNutrition(totalNutrition.carbs) }}g / 단백질:
-              {{ formatNutrition(totalNutrition.protein) }}g / 지방: {{ formatNutrition(totalNutrition.fat) }}g
+              탄수화물: {{ formatDecimal(totalNutrition.carbs) }}g / 단백질:
+              {{ formatDecimal(totalNutrition.protein) }}g / 지방: {{ formatDecimal(totalNutrition.fat) }}g
             </p>
           </div>
 

@@ -8,7 +8,7 @@ import { useDietStore } from "@/stores/diet";
 import aiApi, { type MealPlanResponse } from "@/api/ai/index";
 import statsApi from "@/api/stats";
 import challengeApi, { type ChallengeSummary } from "@/api/challenge";
-import { cn, formatNutrition } from "@/lib/utils";
+import { cn, formatDecimal } from "@/lib/utils";
 
 const router = useRouter();
 const dietStore = useDietStore();
@@ -285,10 +285,10 @@ const fetchDailyDiets = async (targetDate: string) => {
           .map((item) => item.name)
           .filter(Boolean)
           .join(", ") || "음식 정보 없음";
-      const nutritionInfo = `탄수화물 ${formatNutrition(diet.totalCarbs)}g · 단백질 ${formatNutrition(
+      const nutritionInfo = `탄수화물 ${formatDecimal(diet.totalCarbs)}g · 단백질 ${formatDecimal(
         diet.totalProtein
-      )}g · 지방 ${formatNutrition(diet.totalFat)}g`;
-      const subDesc = `${formatNutrition(diet.totalCalories)} kcal · ${nutritionInfo}`;
+      )}g · 지방 ${formatDecimal(diet.totalFat)}g`;
+      const subDesc = `${formatDecimal(diet.totalCalories)} kcal · ${nutritionInfo}`;
 
       return {
         type: "MEAL",
@@ -377,7 +377,7 @@ const fetchDailyExercises = async (targetDate: string) => {
         time: timeStr,
         title: "운동",
         desc: desc,
-        subDesc: `${formatNutrition(totalGroupCalories)} kcal 소모`,
+        subDesc: `${formatDecimal(totalGroupCalories)} kcal 소모`,
         colorClass: "blue",
         icon: Dumbbell,
       };
@@ -555,7 +555,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">섭취 칼로리</div>
           <div class="text-2xl text-white font-bold">
-            {{ formatNutrition(dailyStats.intakeCalories) }}
+            {{ formatDecimal(dailyStats.intakeCalories) }}
             <span class="text-base text-zinc-500 font-normal">kcal</span>
           </div>
         </div>
@@ -565,12 +565,12 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
           <div class="text-zinc-400 text-base">섭취 영양소</div>
           <div class="flex flex-col items-end gap-1">
             <div class="text-2xl text-white font-bold">
-              {{ formatNutrition(dailyStats.macros.carbs + dailyStats.macros.protein + dailyStats.macros.fat) }}
+              {{ formatDecimal(dailyStats.macros.carbs + dailyStats.macros.protein + dailyStats.macros.fat) }}
               <span class="text-base text-zinc-500 font-normal">g</span>
             </div>
             <div class="text-sm text-zinc-500 font-medium">
-              탄 {{ formatNutrition(dailyStats.macros.carbs) }} · 단 {{ formatNutrition(dailyStats.macros.protein) }} ·
-              지 {{ formatNutrition(dailyStats.macros.fat) }}
+              탄 {{ formatDecimal(dailyStats.macros.carbs) }} · 단 {{ formatDecimal(dailyStats.macros.protein) }} · 지
+              {{ formatDecimal(dailyStats.macros.fat) }}
             </div>
           </div>
         </div>
@@ -579,7 +579,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
         <div class="bg-zinc-800 border border-zinc-700 rounded-xl py-6 px-5 flex items-center justify-between h-full">
           <div class="text-zinc-400 text-base">운동 소모</div>
           <div class="text-2xl text-white font-bold">
-            {{ formatNutrition(dailyStats.exerciseCalories) }}
+            {{ formatDecimal(dailyStats.exerciseCalories) }}
             <span class="text-base text-zinc-500 font-normal">kcal</span>
           </div>
         </div>
@@ -615,7 +615,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             </div>
             <div class="text-white">{{ aiMealPlan.breakfast.menu }}</div>
             <div class="text-sm text-zinc-400">
-              {{ formatNutrition(aiMealPlan.breakfast.calories) }}kcal · {{ aiMealPlan.breakfast.comment }}
+              {{ formatDecimal(aiMealPlan.breakfast.calories) }}kcal · {{ aiMealPlan.breakfast.comment }}
             </div>
           </div>
 
@@ -626,7 +626,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             </div>
             <div class="text-white">{{ aiMealPlan.lunch.menu }}</div>
             <div class="text-sm text-zinc-400">
-              {{ formatNutrition(aiMealPlan.lunch.calories) }}kcal · {{ aiMealPlan.lunch.comment }}
+              {{ formatDecimal(aiMealPlan.lunch.calories) }}kcal · {{ aiMealPlan.lunch.comment }}
             </div>
           </div>
 
@@ -637,7 +637,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             </div>
             <div class="text-white">{{ aiMealPlan.dinner.menu }}</div>
             <div class="text-sm text-zinc-400">
-              {{ formatNutrition(aiMealPlan.dinner.calories) }}kcal · {{ aiMealPlan.dinner.comment }}
+              {{ formatDecimal(aiMealPlan.dinner.calories) }}kcal · {{ aiMealPlan.dinner.comment }}
             </div>
           </div>
         </div>
@@ -697,7 +697,7 @@ const handleDeleteExercise = async (recordIds?: number[]) => {
             <div class="grid grid-cols-3 gap-4 w-full">
               <div class="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
                 <div class="text-xs text-zinc-400">진행도</div>
-                <div class="text-lg font-bold text-emerald-400">{{ currentChallenge.progress }}%</div>
+                <div class="text-lg font-bold text-emerald-400">{{ formatDecimal(currentChallenge.progress) }}%</div>
               </div>
               <div class="bg-zinc-800/50 rounded-lg p-3 border border-zinc-700">
                 <div class="text-xs text-zinc-400">성공 일수</div>
