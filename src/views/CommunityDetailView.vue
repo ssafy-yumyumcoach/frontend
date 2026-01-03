@@ -399,7 +399,7 @@ const formatTime = (dateStr: string) => {
             </div>
           </div>
 
-          <div class="flex items-center gap-1">
+          <div v-if="authStore.user?.userId === post.authorId" class="flex items-center gap-1">
             <button @click="startEdit" class="p-2 text-zinc-500 hover:text-emerald-500 transition-colors" title="수정">
               <Pencil class="w-5 h-5" />
             </button>
@@ -510,7 +510,7 @@ const formatTime = (dateStr: string) => {
               <div class="flex items-center gap-1">
                 <span class="text-xs text-zinc-500 mr-2">{{ formatTime(comment.createdAt) }}</span>
                 <button
-                  v-if="editingCommentId !== comment.commentId"
+                  v-if="editingCommentId !== comment.commentId && authStore.user?.userId === comment.authorId"
                   @click="startEditComment(comment)"
                   class="text-zinc-500 hover:text-emerald-500 p-1"
                   title="댓글 수정"
@@ -518,7 +518,7 @@ const formatTime = (dateStr: string) => {
                   <Pencil class="w-3 h-3" />
                 </button>
                 <button
-                  v-if="editingCommentId !== comment.commentId"
+                  v-if="editingCommentId !== comment.commentId && authStore.user?.userId === comment.authorId"
                   @click="handleDeleteComment(comment.commentId)"
                   class="text-zinc-500 hover:text-red-500 p-1"
                   title="댓글 삭제"

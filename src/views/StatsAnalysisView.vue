@@ -192,7 +192,19 @@ const fetchStats = async () => {
         if (!review || !review.evaluated) return false;
 
         const lastUpdateTimeStr = localStorage.getItem("LAST_MEAL_UPDATE_TIME");
+        const lastUpdateDateStr = localStorage.getItem("LAST_MEAL_UPDATE_DATE");
+
+        // If no update time recorded, existing review is valid
         if (!lastUpdateTimeStr) return true;
+
+        // Date Check: If the update happened OUTSIDE the currently viewed week, ignore it.
+        // weekRange: { start: "YYYY-MM-DD", end: "YYYY-MM-DD" }
+        if (lastUpdateDateStr && weekRange.value.start && weekRange.value.end) {
+          if (lastUpdateDateStr < weekRange.value.start || lastUpdateDateStr > weekRange.value.end) {
+            // Update was for a different week, so current week's review is NOT stale based on this update.
+            return true;
+          }
+        }
 
         const lastUpdateTime = new Date(lastUpdateTimeStr).getTime();
         const generatedTime = new Date(review.generatedAt).getTime();
@@ -260,7 +272,17 @@ const fetchStats = async () => {
         if (!review || !review.evaluated) return false;
 
         const lastUpdateTimeStr = localStorage.getItem("LAST_EXERCISE_UPDATE_TIME");
+        const lastUpdateDateStr = localStorage.getItem("LAST_EXERCISE_UPDATE_DATE");
+
         if (!lastUpdateTimeStr) return true; // No updates made locally, so existing review is valid
+
+        // Date Check: If the update happened OUTSIDE the currently viewed week, ignore it.
+        if (lastUpdateDateStr && weekRange.value.start && weekRange.value.end) {
+          if (lastUpdateDateStr < weekRange.value.start || lastUpdateDateStr > weekRange.value.end) {
+            // Update was for a different week
+            return true;
+          }
+        }
 
         const lastUpdateTime = new Date(lastUpdateTimeStr).getTime();
         const generatedTime = new Date(review.generatedAt).getTime();

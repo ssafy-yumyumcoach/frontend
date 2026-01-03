@@ -9,6 +9,7 @@ import exerciseApi, { type Exercise } from "@/api/exercise";
 import statsApi from "@/api/stats";
 
 const router = useRouter();
+const route = useRoute();
 const dateInputRef = ref<HTMLInputElement | null>(null);
 const timeInputRef = ref<HTMLInputElement | null>(null);
 
@@ -51,14 +52,14 @@ const getLocalDateString = () => {
     return `${year}-${month}-${day}`;
 };
 
-const selectedDate = ref(getLocalDateString());
+const selectedDate = ref((route.query.date as string) || getLocalDateString());
 const selectedTime = ref(new Date().toTimeString().slice(0, 5));
 const searchQuery = ref("");
 const selectedCategory = ref("전체");
 const exercises = ref<Exercise[]>([]);
 const selectedExercises = ref<SelectedExercise[]>([]);
 const isLoading = ref(false);
-const route = useRoute();
+// const route = useRoute(); // Moved up
 const isEditMode = ref(false);
 const originalRecordIds = ref<number[]>([]);
 
@@ -286,6 +287,7 @@ const handleSave = async () => {
     // However, we explicitly trigger it to ensure it starts. Fire and forget.
     // Also mark update time for frontend staleness check
     localStorage.setItem('LAST_EXERCISE_UPDATE_TIME', new Date().toISOString());
+    localStorage.setItem('LAST_EXERCISE_UPDATE_DATE', selectedDate.value);
     statsApi.generateExerciseReview({ anchorDate: selectedDate.value }).catch((e) => console.warn(e));
 
     alert(isEditMode.value ? "운동 기록이 수정되었습니다." : "운동 기록이 저장되었습니다.");
