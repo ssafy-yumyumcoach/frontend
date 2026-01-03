@@ -1,28 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { useRoute } from "vue-router";
+import { useUserStore } from "@/stores/user";
+import { storeToRefs } from "pinia";
 import { Lock } from "lucide-vue-next";
 import Avatar from "@/components/ui/Avatar.vue";
 import Button from "@/components/ui/Button.vue";
-import userApi from "@/api/user";
 
 const route = useRoute();
-const userId = Number(route.params.id);
+const userStore = useUserStore();
+const { userProfile, isLoading } = storeToRefs(userStore);
 
-// State
-const isLoading = ref(true);
-
-interface UserState {
-  userId: number;
-  username: string;
-  profileImageUrl: string;
-  introduction: string;
-  followersCount: number;
-  followingsCount: number;
-  isFollowing: boolean;
-}
-
-const user = ref<UserState | null>(null);
+const userId = computed(() => Number(route.params.id));
 
 // Badges for UI
 interface UIBadge {
@@ -34,89 +23,65 @@ interface UIBadge {
   acquired: boolean;
   acquiredDate: string;
 }
-const badges = ref<UIBadge[]>([]);
-const currentTitleId = ref<number | null>(null);
+
+// User state mapped from store to simplify template usage or compute directly
+const user = computed(() => {
+  if (!userProfile.value) return null;
+  const p = userProfile.value;
+  return {
+    userId: p.basic.userId,
+    username: p.basic.username,
+    profileImageUrl: p.basic.profileImageUrl, // Store already sanitizes this
+    introduction: p.basic.introduction,
+    followersCount: p.follow.followersCount,
+    followingsCount: p.follow.followingsCount,
+    isFollowing: p.follow.following,
+  };
+});
+
+const badges = computed<UIBadge[]>(() => {
+  if (!userProfile.value) return [];
+  return (userProfile.value.badges.titles || []).map((t) => ({
+    id: t.titleId,
+    name: t.name,
+    description: t.description,
+    icon: t.iconEmoji,
+    difficulty: t.difficultyName,
+    acquired: true,
+    acquiredDate: t.obtainedAt ? t.obtainedAt.split("T")[0] : "",
+  }));
+});
+
+const currentTitleId = computed(() => userProfile.value?.badges.currentTitleId || null);
 
 // Methods
 const fetchUserProfile = async () => {
   try {
-    isLoading.value = true;
-    const res = await userApi.getUserProfile(userId);
-    const data = res.data;
-    console.log("UserProfile Response:", data);
-
-    let imgUrl = data.basic.profileImageUrl;
-    // Fix double domain issue
-    const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
-    if (imgUrl && imgUrl.includes(cdnDomain + cdnDomain)) {
-      imgUrl = imgUrl.replace(cdnDomain + cdnDomain, cdnDomain);
-    }
-
-    user.value = {
-      userId: data.basic.userId,
-      username: data.basic.username,
-      profileImageUrl: imgUrl,
-      introduction: data.basic.introduction,
-      followersCount: data.follow.followersCount,
-      followingsCount: data.follow.followingsCount,
-      isFollowing: data.follow.following,
-    };
-
-    // Map titles
-    badges.value = (data.badges.titles || []).map((t) => ({
-      id: t.titleId,
-      name: t.name,
-      description: t.description,
-      icon: t.iconEmoji,
-      difficulty: t.difficultyName,
-      acquired: true,
-      acquiredDate: t.obtainedAt ? t.obtainedAt.split("T")[0] : "",
-    }));
-
-    currentTitleId.value = data.badges.currentTitleId || null;
+    await userStore.fetchUserProfile(userId.value);
   } catch (e: any) {
-    console.error("Failed to fetch user profile:", e);
     if (e.response?.status === 404) {
       alert("존재하지 않는 사용자입니다.");
     } else {
       alert("사용자 정보를 불러오는데 실패했습니다.");
     }
-  } finally {
-    isLoading.value = false;
   }
 };
 
 const handleFollowToggle = async () => {
   if (!user.value) return;
 
-  // Snapshot for rollback
-  const previousFollowing = user.value.isFollowing;
-  const previousCount = user.value.followersCount;
-
-  // Optimistic Update
-  if (user.value.isFollowing) {
-    user.value.isFollowing = false;
-    user.value.followersCount = Math.max(0, user.value.followersCount - 1);
-  } else {
-    user.value.isFollowing = true;
-    user.value.followersCount += 1;
-  }
+  const targetId = user.value.userId;
+  const isFollowing = user.value.isFollowing;
 
   try {
-    if (previousFollowing) {
+    if (isFollowing) {
       // Request Unfollow
-      await userApi.unfollowUser(user.value.userId);
+      await userStore.unfollowUser(targetId);
     } else {
       // Request Follow
-      await userApi.followUser(user.value.userId);
+      await userStore.followUser(targetId);
     }
   } catch (e: any) {
-    console.error("Follow toggle failed:", e);
-
-    // Rollback
-    user.value.isFollowing = previousFollowing;
-    user.value.followersCount = previousCount;
-
     const status = e.response?.status;
     const message = e.response?.data?.message;
 
@@ -124,8 +89,6 @@ const handleFollowToggle = async () => {
       alert("로그인이 필요합니다.");
     } else if (status === 409) {
       alert(message || "이미 팔로우 중인 사용자입니다.");
-      // If conflict, it means we are already following. ensure state reflects that.
-      if (!previousFollowing) user.value.isFollowing = true;
     } else if (status === 400) {
       alert(message || "잘못된 팔로우 요청입니다.");
     } else {
@@ -146,6 +109,11 @@ const getDifficultyColor = (difficulty: string) => {
       return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
   }
 };
+
+// Watch ID change (if reusing view)
+watch(userId, () => {
+  fetchUserProfile();
+});
 
 onMounted(() => {
   fetchUserProfile();
