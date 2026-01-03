@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { Search, Plus, X, Calendar, Clock } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Select from "@/components/ui/Select.vue";
-import exerciseApi, { type Exercise } from "@/api/exercise";
-import statsApi from "@/api/stats";
+
+import { useExerciseStore } from "@/stores/exercise";
+import type { Exercise } from "@/api/exercise";
 
 const router = useRouter();
 const route = useRoute();
 const dateInputRef = ref<HTMLInputElement | null>(null);
 const timeInputRef = ref<HTMLInputElement | null>(null);
 
+const exerciseStore = useExerciseStore();
+const { selectedExercises, isLoading, groupedExercises, totalDuration, totalCalories } = storeToRefs(exerciseStore);
+
 const openDatePicker = () => {
-  // try/catch for compatibility if showPicker is missing (though largely supported)
   try {
     dateInputRef.value?.showPicker();
   } catch (e) {
@@ -30,19 +34,6 @@ const openTimePicker = () => {
   }
 };
 
-// Types
-interface SelectedExercise {
-  id: string; // Internal unique ID for the UI list
-  recordId?: number; // Backend ID for existing records
-  exerciseId: number; // API ID (Dynamic based on intensity)
-  name: string;
-  category: string;
-  duration: number; // Minutes
-  intensity: string; // "낮음", "중간", "높음" etc.
-  calories: number;
-  met: number;
-}
-
 // State
 const getLocalDateString = () => {
     const d = new Date();
@@ -56,25 +47,21 @@ const selectedDate = ref((route.query.date as string) || getLocalDateString());
 const selectedTime = ref(new Date().toTimeString().slice(0, 5));
 const searchQuery = ref("");
 const selectedCategory = ref("전체");
-const exercises = ref<Exercise[]>([]);
-const selectedExercises = ref<SelectedExercise[]>([]);
-const isLoading = ref(false);
-// const route = useRoute(); // Moved up
+
+// Edit Mode State
 const isEditMode = ref(false);
-const originalRecordIds = ref<number[]>([]);
 
 // Data
 const categories = ["전체", "맨몸 운동", "웨이트", "유산소", "스트레칭", "스포츠"];
 
-// Utilities
-const calculateCalories = (met: number, duration: number) => {
-  return Math.floor((met * 3.5 * 70 * duration) / 200);
-};
-
 // Lifecycle
 onMounted(async () => {
-  await fetchExercises();
+  await exerciseStore.fetchExercises();
   checkEditMode();
+});
+
+onUnmounted(() => {
+  exerciseStore.clearSelection();
 });
 
 const checkEditMode = async () => {
@@ -84,75 +71,20 @@ const checkEditMode = async () => {
   if (mode === "edit" && idsStr) {
     isEditMode.value = true;
     const ids = idsStr.split(",").map(Number);
-    await loadEditData(ids);
-  }
-};
-
-const loadEditData = async (ids: number[]) => {
-  isLoading.value = true;
-  try {
-    const promises = ids.map((id) => exerciseApi.getMyExerciseRecordDetail(id));
-    const responses = await Promise.all(promises);
-
-    // Store original IDs for delete tracking
-    originalRecordIds.value = ids;
-
-    // Set Date/time from the first record (assuming grouped records share time)
-    if (responses.length > 0) {
-      const firstRecord = responses[0].data;
-      if (firstRecord.recordedAt) {
-        const parts = firstRecord.recordedAt.split("T");
+    try {
+      const recordedAt = await exerciseStore.loadEditData(ids);
+      if (recordedAt) {
+        const parts = recordedAt.split("T");
         selectedDate.value = parts[0];
         selectedTime.value = parts[1].substring(0, 5); // HH:MM
       }
+    } catch (e) {
+      alert("운동 기록을 불러오는데 실패했습니다.");
     }
-
-    selectedExercises.value = responses.map((res) => {
-      const data = res.data;
-      return {
-        id: Date.now().toString() + Math.random(), // Unique UI ID
-        recordId: data.recordId,
-        exerciseId: data.exerciseId,
-        name: data.exerciseName,
-        category: data.type,
-        duration: data.durationMinutes,
-        intensity: data.intensityLevel,
-        calories: data.calories,
-        met: data.met,
-      };
-    });
-  } catch (e) {
-    console.error("Failed to load edit data", e);
-    alert("운동 기록을 불러오는데 실패했습니다.");
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-const fetchExercises = async () => {
-  isLoading.value = true;
-  try {
-    const response = await exerciseApi.getExercises();
-    exercises.value = response.data;
-  } catch (error) {
-    console.error("Failed to fetch exercises:", error);
-  } finally {
-    isLoading.value = false;
   }
 };
 
 // Computed
-const groupedExercises = computed(() => {
-  const groups: Record<string, Exercise[]> = {};
-  exercises.value.forEach((ex) => {
-    if (!groups[ex.name]) {
-      groups[ex.name] = [];
-    }
-    groups[ex.name].push(ex);
-  });
-  return groups;
-});
-
 const uniqueExercises = computed(() => {
   return Object.values(groupedExercises.value).map((group) => group[0]);
 });
@@ -165,70 +97,23 @@ const filteredExercises = computed(() => {
   });
 });
 
-const totalDuration = computed(() => {
-  return selectedExercises.value.reduce((sum, ex) => sum + ex.duration, 0);
-});
-
-const totalCalories = computed(() => {
-  return selectedExercises.value.reduce((sum, ex) => sum + ex.calories, 0);
-});
-
 // Actions
 const handleAddExercise = (exercise: Exercise) => {
-  // Default to "중간" intensity if available, otherwise take the first available one
-  const variants = groupedExercises.value[exercise.name] || [exercise];
-  const defaultVariant = variants.find((v) => v.intensityLevel === "중간") || variants[0];
-
-  const newExercise: SelectedExercise = {
-    id: Date.now().toString(),
-    exerciseId: defaultVariant.exerciseId,
-    name: defaultVariant.name,
-    category: defaultVariant.type,
-    duration: 30,
-    intensity: defaultVariant.intensityLevel,
-    calories: calculateCalories(defaultVariant.met, 30),
-    met: defaultVariant.met,
-  };
-  selectedExercises.value.push(newExercise);
+  exerciseStore.addExerciseToSelection(exercise);
 };
 
 const handleRemoveExercise = (id: string) => {
-  selectedExercises.value = selectedExercises.value.filter((ex) => ex.id !== id);
+  exerciseStore.removeExerciseFromSelection(id);
 };
 
-const handleUpdateExercise = (id: string, field: keyof SelectedExercise, value: number | string) => {
-  const selectedEx = selectedExercises.value.find((ex) => ex.id === id);
-  if (!selectedEx) return;
-
-  if (field === "duration") {
-    selectedEx.duration = Number(value);
-    // Recalculate calories using current MET
-    selectedEx.calories = calculateCalories(selectedEx.met, selectedEx.duration);
-  } else if (field === "intensity") {
-    const newIntensity = String(value);
-
-    // Find the variant with the new intensity
-    const variants = groupedExercises.value[selectedEx.name];
-    const newVariant = variants?.find((v) => v.intensityLevel === newIntensity);
-
-    if (newVariant) {
-      selectedEx.intensity = newIntensity;
-      selectedEx.exerciseId = newVariant.exerciseId;
-      selectedEx.met = newVariant.met;
-      selectedEx.calories = calculateCalories(newVariant.met, selectedEx.duration);
-    } else {
-      // Fallback
-      console.warn(`Variant with intensity ${newIntensity} not found for ${selectedEx.name}`);
-    }
-  }
+const handleUpdateExercise = (id: string, field: "duration" | "intensity", value: number | string) => {
+  exerciseStore.updateExerciseInSelection(id, field, value);
 };
 
 const getIntensityOptions = (name: string) => {
   const variants = groupedExercises.value[name] || [];
-  // Return unique intensity levels
   const levels = Array.from(new Set(variants.map((v) => v.intensityLevel)));
 
-  // Sort logically if possible (Lowest -> Highest)
   const order = ["낮음", "중간", "높음"];
   levels.sort((a, b) => {
     const idxA = order.indexOf(a);
@@ -241,60 +126,18 @@ const getIntensityOptions = (name: string) => {
 };
 
 const handleSave = async () => {
-  if (selectedExercises.value.length === 0) {
-    alert("운동을 최소 하나 이상 선택해주세요.");
-    return;
-  }
-
   try {
-    const dateTime = `${selectedDate.value}T${selectedTime.value}:00`;
-
-    // 1. Create New Records (no recordId)
-    const newRecords = selectedExercises.value
-      .filter((ex) => !ex.recordId)
-      .map((ex) => ({
-        exerciseId: ex.exerciseId,
-        durationMinutes: ex.duration,
-        recordedAt: dateTime,
-      }));
-
-    // 2. Update Existing Records (has recordId)
-    const updatePromises = selectedExercises.value
-      .filter((ex) => ex.recordId)
-      .map((ex) =>
-        exerciseApi.updateMyExerciseRecord(ex.recordId!, {
-          exerciseId: ex.exerciseId,
-          durationMinutes: ex.duration,
-          recordedAt: dateTime,
-        })
-      );
-
-    // 3. Delete Removed Records
-    // IDs that were in originalRecordIds but NOT in current selectedExercises
-    const currentRecordIds = selectedExercises.value.map((ex) => ex.recordId).filter((id): id is number => !!id);
-
-    const initialIds = originalRecordIds.value;
-    const idsToDelete = initialIds.filter((id) => !currentRecordIds.includes(id));
-
-    const deletePromises = idsToDelete.map((id) => exerciseApi.deleteMyExerciseRecord(id));
-
-    // Execute All
-    const createPromise = newRecords.length > 0 ? exerciseApi.createMyExerciseRecords(newRecords) : Promise.resolve();
-
-    await Promise.all([createPromise, ...updatePromises, ...deletePromises]);
-
-    // Note: AI Exercise Review generation is handled asynchronously by the backend.
-    // However, we explicitly trigger it to ensure it starts. Fire and forget.
-    // Also mark update time for frontend staleness check
-    localStorage.setItem('LAST_EXERCISE_UPDATE_TIME', new Date().toISOString());
-    localStorage.setItem('LAST_EXERCISE_UPDATE_DATE', selectedDate.value);
-    statsApi.generateExerciseReview({ anchorDate: selectedDate.value }).catch((e) => console.warn(e));
-
+    await exerciseStore.saveExerciseRecords(selectedDate.value, selectedTime.value);
+    
     alert(isEditMode.value ? "운동 기록이 수정되었습니다." : "운동 기록이 저장되었습니다.");
     router.push("/dashboard");
-  } catch (error) {
-    console.error("Failed to save exercise records:", error);
-    alert("운동 기록 저장에 실패했습니다.");
+  } catch (error: any) {
+    if (error.message === "NO_SELECTION") {
+      alert("운동을 최소 하나 이상 선택해주세요.");
+    } else {
+      console.error("Failed to save:", error);
+      alert("운동 기록 저장에 실패했습니다.");
+    }
   }
 };
 </script>
