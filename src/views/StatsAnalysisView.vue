@@ -15,11 +15,24 @@ import {
 } from "chart.js";
 import { Bar } from "vue-chartjs";
 import { Loader2 } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import Select from "@/components/ui/Select.vue";
-import statsApi from "@/api/stats";
+import { useStatsStore } from "@/stores/stats";
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement);
+
+// --- Store ---
+const statsStore = useStatsStore();
+const { 
+  rawDietStats, 
+  rawExerciseStats, 
+  nutritionReview, 
+  exerciseReview, 
+  isLoading, 
+  isNutritionReviewLoading, 
+  isExerciseReviewLoading 
+} = storeToRefs(statsStore);
 
 // --- Helpers ---
 const formatDateForApi = (d: Date) => {
@@ -88,16 +101,6 @@ const exerciseStatOptions = [
   { label: "소모칼로리", value: "calories" },
 ];
 
-// Data State
-const isLoading = ref(false);
-const rawDietStats = ref<any[]>([]);
-const rawExerciseStats = ref<any[]>([]);
-const weekRange = ref({ start: "", end: "" });
-const nutritionReview = ref<any>(null);
-const exerciseReview = ref<any>(null);
-const isNutritionReviewLoading = ref(false);
-const isExerciseReviewLoading = ref(false);
-
 // Data Check Helpers
 const hasDietData = computed(() => {
   return rawDietStats.value.some((d) => Number(d[selectedNutrient.value]) > 0);
@@ -147,195 +150,13 @@ const getStatusLabel = (key: string) => {
 // --- API Fetch ---
 const fetchStats = async () => {
   if (!selectedWeek.value) return;
-  isLoading.value = true;
-  try {
-    const [statsRes, reviewRes, exReviewRes] = await Promise.allSettled([
-      statsApi.getWeeklyStats(selectedWeek.value),
-      statsApi.getNutritionReview(selectedWeek.value),
-      statsApi.getExerciseReview(selectedWeek.value),
-    ]);
-
-    // Handle Stats
-    if (statsRes.status === "fulfilled") {
-      const data = statsRes.value.data;
-      rawDietStats.value = data.dietStats || [];
-      rawExerciseStats.value = data.exerciseStats || [];
-      weekRange.value = {
-        start: data.weekStartDate,
-        end: data.weekEndDate,
-      };
-    } else {
-      console.error("Failed to fetch stats:", statsRes.reason);
-      rawDietStats.value = [];
-      rawExerciseStats.value = [];
-    }
-
-    // Handle Nutrition Review
-    const handleNutritionReviewFetch = async () => {
-      // 1. Data Check: Do we have any diet data to analyze?
-      const hasAnyDietData = (rawDietStats.value || []).some(
-        (d: any) => Number(d.calories) > 0 || Number(d.carbs) > 0 || Number(d.protein) > 0 || Number(d.fat) > 0
-      );
-
-      if (!hasAnyDietData) {
-        nutritionReview.value = null;
-        isNutritionReviewLoading.value = false;
-        return;
-      }
-
-      // Polling Logic
-      let attempts = 0;
-      const maxAttempts = 10;
-      const pollInterval = 2000;
-
-      const isNutritionReviewValid = (review: any) => {
-        if (!review || !review.evaluated) return false;
-
-        const lastUpdateTimeStr = localStorage.getItem("LAST_MEAL_UPDATE_TIME");
-        const lastUpdateDateStr = localStorage.getItem("LAST_MEAL_UPDATE_DATE");
-
-        // If no update time recorded, existing review is valid
-        if (!lastUpdateTimeStr) return true;
-
-        // Date Check: If the update happened OUTSIDE the currently viewed week, ignore it.
-        // weekRange: { start: "YYYY-MM-DD", end: "YYYY-MM-DD" }
-        if (lastUpdateDateStr && weekRange.value.start && weekRange.value.end) {
-          if (lastUpdateDateStr < weekRange.value.start || lastUpdateDateStr > weekRange.value.end) {
-            // Update was for a different week, so current week's review is NOT stale based on this update.
-            return true;
-          }
-        }
-
-        const lastUpdateTime = new Date(lastUpdateTimeStr).getTime();
-        const generatedTime = new Date(review.generatedAt).getTime();
-
-        // If generatedAt is OLDER than last update, it's stale.
-        return generatedTime >= lastUpdateTime;
-      };
-
-      const poll = async () => {
-        try {
-          const res = await statsApi.getNutritionReview(selectedWeek.value);
-          if (isNutritionReviewValid(res.data)) {
-            nutritionReview.value = res.data;
-            return true;
-          }
-        } catch (e) {
-          console.warn("Polling nutrition review failed:", e);
-        }
-        return false;
-      };
-
-      // Initial Check
-      if (reviewRes.status === "fulfilled" && isNutritionReviewValid(reviewRes.value.data)) {
-        nutritionReview.value = reviewRes.value.data;
-        isNutritionReviewLoading.value = false;
-      } else {
-        nutritionReview.value = null;
-        isNutritionReviewLoading.value = true; // Start loading state
-
-        console.log("Starting polling for fresh nutrition review...");
-        const interval = setInterval(async () => {
-          attempts++;
-          const success = await poll();
-          if (success || attempts >= maxAttempts) {
-            clearInterval(interval);
-            isNutritionReviewLoading.value = false; // Stop loading state
-            if (success) {
-              console.log("Fresh nutrition review fetched via polling!");
-            } else console.log("Nutrition Polling timed out.");
-          }
-        }, pollInterval);
-      }
-    };
-
-    // Handle Exercise Review
-    const handleExerciseReviewFetch = async () => {
-      // 1. Data Check
-      const hasAnyExerciseData = (rawExerciseStats.value || []).some(
-        (d: any) => Number(d.durationMinutes) > 0 || Number(d.calories) > 0
-      );
-
-      if (!hasAnyExerciseData) {
-        exerciseReview.value = null;
-        isExerciseReviewLoading.value = false;
-        return;
-      }
-
-      // Polling Logic
-      let attempts = 0;
-      const maxAttempts = 10;
-      const pollInterval = 2000;
-
-      // Helper: Check if review is valid (not stale)
-      const isReviewValid = (review: any) => {
-        if (!review || !review.evaluated) return false;
-
-        const lastUpdateTimeStr = localStorage.getItem("LAST_EXERCISE_UPDATE_TIME");
-        const lastUpdateDateStr = localStorage.getItem("LAST_EXERCISE_UPDATE_DATE");
-
-        if (!lastUpdateTimeStr) return true; // No updates made locally, so existing review is valid
-
-        // Date Check: If the update happened OUTSIDE the currently viewed week, ignore it.
-        if (lastUpdateDateStr && weekRange.value.start && weekRange.value.end) {
-          if (lastUpdateDateStr < weekRange.value.start || lastUpdateDateStr > weekRange.value.end) {
-            // Update was for a different week
-            return true;
-          }
-        }
-
-        const lastUpdateTime = new Date(lastUpdateTimeStr).getTime();
-        const generatedTime = new Date(review.generatedAt).getTime();
-
-        // If generatedAt is OLDER than last update, it's stale.
-        return generatedTime >= lastUpdateTime;
-      };
-
-      const poll = async () => {
-        try {
-          const res = await statsApi.getExerciseReview(selectedWeek.value);
-          if (isReviewValid(res.data)) {
-            exerciseReview.value = res.data;
-            return true;
-          }
-        } catch (e) {
-          console.warn("Polling exercise review failed:", e);
-        }
-        return false;
-      };
-
-      // Initial Check
-      // If we have a result AND it counts as valid (newer than last update), use it.
-      if (exReviewRes.status === "fulfilled" && isReviewValid(exReviewRes.value.data)) {
-        exerciseReview.value = exReviewRes.value.data;
-        isExerciseReviewLoading.value = false;
-      } else {
-        exerciseReview.value = null;
-        isExerciseReviewLoading.value = true; // Use explicit loading state
-
-        // Start Polling
-        console.log("Starting polling for fresh exercise review...");
-        const interval = setInterval(async () => {
-          attempts++;
-          const success = await poll();
-          if (success || attempts >= maxAttempts) {
-            clearInterval(interval);
-            isExerciseReviewLoading.value = false; // Stop loading state
-            if (success) {
-              console.log("Fresh exercise review fetched via polling!");
-            } else console.log("Polling timed out.");
-          }
-        }, pollInterval);
-      }
-    };
-
-    handleNutritionReviewFetch();
-    handleExerciseReviewFetch();
-  } catch (error) {
-    console.error("Unexpected error:", error);
-  } finally {
-    isLoading.value = false;
-  }
+  
+  // 1. Fetch Graphs
+  await statsStore.fetchWeeklyStats(selectedWeek.value);
+  
+  // 2. Fetch Reviews (Store handles polling and data validity)
+  statsStore.fetchNutritionReview(selectedWeek.value);
+  statsStore.fetchExerciseReview(selectedWeek.value);
 };
 
 // Watch for week change
