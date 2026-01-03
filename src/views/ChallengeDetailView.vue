@@ -2,16 +2,18 @@
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Calendar, ArrowLeft } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import Button from "@/components/ui/Button.vue";
-import challengeApi, { type ChallengeDetailResponse } from "@/api/challenge";
 import { formatDecimal } from "@/lib/utils";
+import { useChallengeStore } from "@/stores/challenge";
 
 const route = useRoute();
 const router = useRouter();
 const challengeId = Number(route.params.id);
 
-const challenge = ref<ChallengeDetailResponse | null>(null);
-const isLoading = ref(true);
+const challengeStore = useChallengeStore();
+const { challenge, isLoading } = storeToRefs(challengeStore);
+
 const selectedDifficulty = ref<"BEGINNER" | "INTERMEDIATE" | "ADVANCED">("INTERMEDIATE");
 
 const today = new Date();
@@ -19,37 +21,29 @@ const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart
   today.getDate()
 ).padStart(2, "0")}`;
 
-// Determine status based on dates
-// isPreStart: today < startDate
-// isRecruiting: today >= recruitStartDate && today <= recruitEndDate
-// isStarted: today >= startDate && today <= endDate
-
 const fetchDetail = async () => {
-  isLoading.value = true;
   try {
-    const res = await challengeApi.getChallengeDetail(challengeId);
-    challenge.value = res.data;
-    if (challenge.value.selectedDifficulty) {
-      // If already joined, set difficulty
-      selectedDifficulty.value = challenge.value.selectedDifficulty as any;
-    } else {
-      // Default to Intermediate if exists, else first available
-      if (challenge.value.difficultyOptions?.some((d) => d.difficultyCode === "INTERMEDIATE")) {
-        selectedDifficulty.value = "INTERMEDIATE";
-      } else if (challenge.value.difficultyOptions && challenge.value.difficultyOptions.length > 0) {
-        selectedDifficulty.value = challenge.value.difficultyOptions[0].difficultyCode;
+    await challengeStore.fetchChallengeDetail(challengeId);
+    
+    // Set initial difficulty from loaded data
+    if (challenge.value) {
+      if (challenge.value.selectedDifficulty) {
+        selectedDifficulty.value = challenge.value.selectedDifficulty as any;
+      } else {
+        if (challenge.value.difficultyOptions?.some((d) => d.difficultyCode === "INTERMEDIATE")) {
+          selectedDifficulty.value = "INTERMEDIATE";
+        } else if (challenge.value.difficultyOptions && challenge.value.difficultyOptions.length > 0) {
+          selectedDifficulty.value = challenge.value.difficultyOptions[0].difficultyCode;
+        }
       }
     }
   } catch (error: any) {
-    console.error("Failed to fetch challenge detail:", error);
     if (error.response?.status === 404) {
       alert("존재하지 않는 챌린지입니다.");
       router.replace("/challenge-list");
     } else {
       alert("챌린지 정보를 불러오는데 실패했습니다.");
     }
-  } finally {
-    isLoading.value = false;
   }
 };
 
@@ -61,9 +55,8 @@ const handleJoin = async () => {
   if (!confirm(`'${getDifficultyLabel(selectedDifficulty.value)}' 난이도로 챌린지에 참여하시겠습니까?`)) return;
 
   try {
-    await challengeApi.joinChallenge(challengeId, selectedDifficulty.value);
+    await challengeStore.joinChallenge(challengeId, selectedDifficulty.value);
     alert("챌린지에 참여했습니다!");
-    await fetchDetail();
   } catch (error: any) {
     if (error.response?.status === 409) {
       alert("이미 참여 중인 챌린지입니다.");
@@ -82,12 +75,9 @@ const handleLeave = async () => {
   if (!confirm(message)) return;
 
   try {
-    await challengeApi.leaveChallenge(challengeId);
+    await challengeStore.leaveChallenge(challengeId);
     alert(isStarted ? "챌린지를 포기했습니다." : "신청이 취소되었습니다.");
-    // If getting challenge detail again, isJoined will be false.
-    // User remains on page? or redirect?
-    // Typically refresh detail.
-    await fetchDetail();
+    // View updates automatically due to store action refreshing detail
   } catch (error: any) {
     if (error.response?.status === 409) {
       alert("이미 나간 챌린지입니다.");
