@@ -2,21 +2,27 @@
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { Heart, MessageCircle, ArrowLeft, Send, Trash2, Pencil, X, ImagePlus } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import Avatar from "@/components/ui/Avatar.vue";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
 import Textarea from "@/components/ui/Textarea.vue";
 import Label from "@/components/ui/Label.vue";
 
-import communityApi, { type PostDetailResponse, type CommentResponse } from "@/api/community";
+import { type CommentResponse } from "@/api/community";
 import imageApi from "@/api/image";
 
 import { useAuthStore } from "@/stores/auth";
+import { useCommunityStore } from "@/stores/community";
 
 const route = useRoute();
 const router = useRouter();
 const postId = Number(route.params.id);
 const authStore = useAuthStore();
+const communityStore = useCommunityStore();
+
+// Store State
+const { post, comments, isLoading } = storeToRefs(communityStore);
 
 const goToProfile = (userId: number) => {
   if (userId === authStore.user?.userId) {
@@ -26,10 +32,7 @@ const goToProfile = (userId: number) => {
 };
 
 // State
-const post = ref<PostDetailResponse | null>(null);
-const comments = ref<CommentResponse[]>([]);
 const newCommentContent = ref("");
-const isLoading = ref(false);
 
 // Edit State
 const isEditMode = ref(false);
@@ -41,33 +44,15 @@ const fileInput = ref<HTMLInputElement | null>(null);
 // --- Fetch Data ---
 const fetchPostDetail = async () => {
   if (!postId) return;
-  isLoading.value = true;
   try {
-    const [postRes, commentRes] = await Promise.all([
-      communityApi.getPostDetail(postId),
-      communityApi.getCommentsByPost(postId),
-    ]);
-    post.value = postRes.data;
-
-    // Comments Structure Handling
-    // Spec: { postId, totalCount, comments: [] }
-    if (commentRes.data && Array.isArray(commentRes.data.comments)) {
-      comments.value = commentRes.data.comments;
-    } else {
-      comments.value = [];
-    }
+    await communityStore.fetchPostDetail(postId);
   } catch (error: any) {
-    console.error("Failed to fetch detail:", error);
-
     if (error.response?.status === 404) {
-      // Determine if it was the post or comments that failed (though usually handled together)
       alert("게시글을 찾을 수 없습니다.");
       router.back();
     } else {
       alert("게시글 정보를 불러오는데 실패했습니다.");
     }
-  } finally {
-    isLoading.value = false;
   }
 };
 
@@ -132,12 +117,10 @@ const handleUpdate = async () => {
       .filter((img) => img.isExisting)
       .map((img) => {
         // Extract object key from full URL
-        // Assuming URL format is https://domain.com/KEY
         try {
           const urlObj = new URL(img.preview);
           return urlObj.pathname.substring(1); // Remove leading slash
         } catch (e) {
-          // Fallback if not a valid URL or other issue, though it should be a full URL from backend
           console.warn("Failed to extract key from URL:", img.preview);
           return img.preview;
         }
@@ -154,17 +137,12 @@ const handleUpdate = async () => {
 
     const finalImages = [...existingImages, ...newImageKeys];
 
-    // 2. Update API
-    const res = await communityApi.updatePost(postId, {
+    // 2. Update via Store
+    await communityStore.updatePost(postId, {
       title: editTitle.value,
       content: editContent.value,
       images: finalImages,
     });
-
-    // 3. Update Local State
-    if (post.value) {
-      post.value = { ...post.value, ...res.data };
-    }
 
     alert("게시글이 수정되었습니다.");
     isEditMode.value = false;
@@ -178,7 +156,7 @@ const handleUpdate = async () => {
 const deletePost = async () => {
   if (!confirm("정말로 삭제하시겠습니까?")) return;
   try {
-    await communityApi.deletePost(postId);
+    await communityStore.deletePost(postId);
     alert("게시글이 삭제되었습니다.");
     router.replace("/community");
   } catch (error: any) {
@@ -191,29 +169,8 @@ const toggleLike = async () => {
   if (!post.value) return;
 
   try {
-    if (post.value.isLikedByMe) {
-      // Unlike
-      const res = await communityApi.unlikePost(postId);
-      post.value.isLikedByMe = false;
-
-      if (res.data && typeof res.data.likeCount === "number") {
-        post.value.likeCount = res.data.likeCount;
-      } else {
-        post.value.likeCount--;
-      }
-    } else {
-      // Like
-      const res = await communityApi.likePost(postId);
-      post.value.isLikedByMe = true;
-
-      if (res.data && typeof res.data.likeCount === "number") {
-        post.value.likeCount = res.data.likeCount;
-      } else {
-        post.value.likeCount++;
-      }
-    }
+    await communityStore.toggleLike(postId);
   } catch (error: any) {
-    console.error("Failed to toggle like:", error);
     if (error.response) {
       const { status, data } = error.response;
 
@@ -222,15 +179,13 @@ const toggleLike = async () => {
       } else if (status === 404) {
         if (data?.code === "LIKE_NOT_FOUND") {
           alert("해당 게시글에 대해 눌러둔 좋아요가 없습니다.");
-          // Sync state
-          if (post.value) post.value.isLikedByMe = false;
+          // Store already handles optimistic update or sync if possible, 
+          // but here we just alert user.
         } else {
           alert("게시글을 찾을 수 없습니다.");
         }
       } else if (status === 409) {
         alert("이미 좋아요를 누른 게시글입니다.");
-        // Sync state
-        if (post.value) post.value.isLikedByMe = true;
       } else {
         alert("좋아요 처리에 실패했습니다.");
       }
@@ -241,18 +196,8 @@ const toggleLike = async () => {
 const submitComment = async () => {
   if (!newCommentContent.value.trim()) return;
   try {
-    const createRes = await communityApi.createComment(postId, { content: newCommentContent.value });
-
-    // Optimistic update or use response
-    // User spec response: 201 Created with full comment object
-    const newComment = createRes.data;
-    comments.value.push(newComment);
+    await communityStore.createComment(postId, { content: newCommentContent.value });
     newCommentContent.value = "";
-
-    if (post.value) post.value.commentCount++;
-
-    // Optionally reload to ensure sync/order if backend sorts differently
-    // await fetchComments(); // Skipping to rely on response for better performance
   } catch (error: any) {
     console.error("Failed to add comment:", error);
     if (error.response) {
@@ -263,7 +208,6 @@ const submitComment = async () => {
         alert(msg || "입력 값이 올바르지 않습니다.");
       } else if (status === 401) {
         alert("로그인이 필요합니다.");
-        // router.push('/login'); // Optional
       } else if (status === 404) {
         alert("댓글을 작성할 게시글을 찾을 수 없습니다.");
       } else {
@@ -293,16 +237,9 @@ const handleUpdateComment = async (commentId: number) => {
   if (!editingCommentContent.value.trim()) return;
 
   try {
-    const res = await communityApi.updateComment(postId, commentId, {
+    await communityStore.updateComment(postId, commentId, {
       content: editingCommentContent.value,
     });
-
-    // Update local list
-    const target = comments.value.find((c) => c.commentId === commentId);
-    if (target) {
-      target.content = res.data.content;
-      target.updatedAt = res.data.updatedAt;
-    }
 
     cancelEditComment();
     alert("댓글이 수정되었습니다.");
@@ -323,12 +260,7 @@ const handleDeleteComment = async (commentId: number) => {
   if (!confirm("정말로 이 댓글을 삭제하시겠습니까?")) return;
 
   try {
-    await communityApi.deleteComment(postId, commentId);
-
-    // Remove from list
-    comments.value = comments.value.filter((c) => c.commentId !== commentId);
-    if (post.value) post.value.commentCount--;
-
+    await communityStore.deleteComment(postId, commentId);
     alert("댓글이 삭제되었습니다.");
   } catch (error: any) {
     console.error("Failed to delete comment:", error);
@@ -571,3 +503,4 @@ const formatTime = (dateStr: string) => {
     </div>
   </div>
 </template>
+
