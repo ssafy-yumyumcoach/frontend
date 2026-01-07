@@ -204,7 +204,7 @@ onMounted(() => {
       </header>
 
       <!-- 메인 콘텐츠 -->
-      <main class="flex-1 p-6 overflow-y-auto">
+      <main id="main-content" class="flex-1 p-6 overflow-y-auto">
         <div class="max-w-7xl mx-auto">
           <router-view />
         </div>

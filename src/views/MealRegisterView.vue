@@ -70,7 +70,7 @@ interface FoodItem {
 }
 
 // State
-const selectedDate = ref(new Date().toISOString().split("T")[0]);
+const selectedDate = ref((route.query.date as string) || new Date().toISOString().split("T")[0]);
 const selectedTime = ref(new Date().toTimeString().slice(0, 5));
 const existingImageRaw = ref("");
 
@@ -732,6 +732,7 @@ const handleSave = async () => {
 
     // AI 주간 영양 평가 생성 트리거 (비동기, 결과 기다리지 않음)
     localStorage.setItem("LAST_MEAL_UPDATE_TIME", new Date().toISOString());
+    localStorage.setItem("LAST_MEAL_UPDATE_DATE", selectedDate.value);
     statsApi.generateNutritionReview({ anchorDate: selectedDate.value }).catch((e) => console.warn(e));
 
     router.push("/dashboard");

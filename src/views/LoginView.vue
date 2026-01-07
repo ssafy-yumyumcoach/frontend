@@ -66,7 +66,7 @@ const checkNickname = async () => {
     }
   } catch (error: any) {
     console.error(error);
-    alert("닉네임 중복 확인 중 오류가 발생했습니다.");
+    alert("올바른 닉네임 형식이 아닙니다.");
   }
 };
 

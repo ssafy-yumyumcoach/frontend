@@ -2,14 +2,16 @@
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { Calendar } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import Button from "@/components/ui/Button.vue";
 import ImageWithFallback from "@/components/common/ImageWithFallback.vue";
-import challengeApi, { type ChallengeSummary } from "@/api/challenge";
+import { useChallengeStore } from "@/stores/challenge";
 
 const router = useRouter();
+const challengeStore = useChallengeStore();
+const { challenges, isLoading } = storeToRefs(challengeStore);
+
 const activeTab = ref<"recruiting" | "joined">("recruiting"); // Renamed 'all' to 'recruiting'
-const challenges = ref<ChallengeSummary[]>([]);
-const isLoading = ref(false);
 
 const today = new Date();
 const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
@@ -17,31 +19,10 @@ const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart
 ).padStart(2, "0")}`;
 
 const fetchChallenges = async () => {
-  isLoading.value = true;
   try {
-    const currentMonth = todayStr.substring(0, 7); // YYYY-MM
-
-    // Calculate next month
-    const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    const nextMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
-
-    const [resCurrent, resNext] = await Promise.all([
-      challengeApi.getChallenges(currentMonth),
-      challengeApi.getChallenges(nextMonth),
-    ]);
-
-    const merged = [...resCurrent.data.challenges, ...resNext.data.challenges];
-
-    // Remove duplicates if any (based on challengeId)
-    const unique = merged.filter((c, index, self) => index === self.findIndex((t) => t.challengeId === c.challengeId));
-
-    console.log("Merged API Response:", unique);
-    challenges.value = unique;
+    await challengeStore.fetchAllChallengesForListView();
   } catch (error) {
-    console.error("Failed to fetch challenges:", error);
     alert("챌린지 목록을 불러오는데 실패했습니다.");
-  } finally {
-    isLoading.value = false;
   }
 };
 
@@ -62,19 +43,9 @@ const filteredChallenges = computed(() => {
   return challenges.value;
 });
 
-const handleJoinToggle = async (challengeId: number, isJoined?: boolean) => {
-  if (isJoined) {
-    // If already joined, maybe confirm leave or just go to detail
-    // User requested "Join/Leave" endpoints, let's keep leave here for convenience if desired,
-    // BUT typically leaving is a significant action detailed in detail page.
-    // Let's just navigate to detail for both for consistency,
-    // OR keep leave here but "Join" MUST go to detail.
-    // Let's redirect to detail for better UX and difficulty selection.
-    router.push(`/challenge-detail/${challengeId}`);
-  } else {
-    // Must go to detail to select difficulty
-    router.push(`/challenge-detail/${challengeId}`);
-  }
+const handleJoinToggle = async (challengeId: number) => {
+  // Always navigate to detail for consistency
+  router.push(`/challenge-detail/${challengeId}`);
 };
 
 const navigateToDetail = (challengeId: number) => {
@@ -168,14 +139,14 @@ const navigateToDetail = (challengeId: number) => {
             <!-- Only show Join button if recruiting or not joined -->
             <Button
               v-if="!challenge.isJoined"
-              @click="handleJoinToggle(challenge.challengeId, challenge.isJoined)"
+              @click="handleJoinToggle(challenge.challengeId)"
               class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white"
             >
               참여하기
             </Button>
             <Button
               v-else
-              @click="handleJoinToggle(challenge.challengeId, challenge.isJoined)"
+              @click="handleJoinToggle(challenge.challengeId)"
               variant="outline"
               class="flex-1 border-zinc-700 text-zinc-400 hover:bg-zinc-800"
             >

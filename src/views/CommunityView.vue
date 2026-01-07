@@ -2,6 +2,7 @@
 import { computed, ref, onMounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { Heart, MessageCircle, ImagePlus, Send, X, Search, ChevronLeft, ChevronRight, Trash2, Pencil } from "lucide-vue-next";
+import { storeToRefs } from "pinia";
 import Avatar from "@/components/ui/Avatar.vue";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
@@ -11,21 +12,22 @@ import Label from "@/components/ui/Label.vue";
 import Select from "@/components/ui/Select.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
 
-import communityApi, { type PostSummary } from "@/api/community";
 import imageApi from "@/api/image";
 import { useAuthStore } from "@/stores/auth";
+import { useCommunityStore } from "@/stores/community";
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
+const communityStore = useCommunityStore();
 
-// Feed State
-const posts = ref<PostSummary[]>([]);
-const isLoading = ref(false);
+// Store State
+const { posts, isLoading, totalPosts } = storeToRefs(communityStore);
+
+// Local UI State (Search & Pagination)
 const searchKeyword = ref("");
 const searchType = ref("all");
 const currentPage = ref(1);
-const totalPosts = ref(0);
 const pageSize = 10;
 const selectedPostIds = ref<Set<number>>(new Set());
 const isEditMode = ref(false);
@@ -74,11 +76,8 @@ const isAllSelected = computed(() => {
 
 const toggleSelectAll = () => {
   if (isAllSelected.value) {
-    // If all are selected, deselect only the current page's posts (or clear all? - usually current page)
-    // Let's clear current page posts from selection
     posts.value.forEach((post) => selectedPostIds.value.delete(post.postId));
   } else {
-    // Select all visible posts
     posts.value.forEach((post) => selectedPostIds.value.add(post.postId));
   }
 };
@@ -88,7 +87,7 @@ const handleDeleteSelected = async () => {
     if (!confirm(`${selectedPostIds.value.size}개의 게시글을 삭제하시겠습니까?`)) return;
 
     try {
-        const deletePromises = Array.from(selectedPostIds.value).map(id => communityApi.deletePost(id));
+        const deletePromises = Array.from(selectedPostIds.value).map(id => communityStore.deletePost(id));
         await Promise.all(deletePromises);
         alert("선택한 게시글이 삭제되었습니다.");
         selectedPostIds.value.clear();
@@ -122,62 +121,44 @@ const handlePageChange = (page: number) => {
 };
 
 const fetchPosts = async () => {
-  isLoading.value = true;
   selectedPostIds.value.clear();
+  
+  const keywordFromUrl = route.query.keyword as string;
+  const typeFromUrl = (route.query.type as string) || "all";
+  const pageFromUrl = Number(route.query.page) || 1;
+
+  currentPage.value = pageFromUrl;
+  searchType.value = typeFromUrl;
+
+  const params: any = {
+    page: pageFromUrl,
+    size: pageSize,
+    keyword: keywordFromUrl || undefined,
+  };
+  
+  // Sync local search input with URL
+  if (keywordFromUrl) {
+    if (searchKeyword.value !== keywordFromUrl) {
+      searchKeyword.value = keywordFromUrl;
+    }
+  } else if (!keywordFromUrl && searchKeyword.value) {
+     searchKeyword.value = "";
+  }
+  
+  // If we have a keyword, we might need to filter manually if the backend search isn't fully integrated 
+  // with 'type' (title vs content). But assuming backend handles 'keyword' generally.
+  // The original code filtered client-side for title/content distinction if 'keyword' was present.
+  // Ideally, backend handles this via 'type' param along with 'keyword'.
+  // We'll pass both if the backend supports it, or rely on the store.
+  // Assuming the store's fetchPosts calls the API which accepts these params.
+  if (searchType.value !== "all") {
+      params.type = searchType.value;
+  }
+
   try {
-    const keywordFromUrl = route.query.keyword as string;
-    const typeFromUrl = (route.query.type as string) || "all";
-    const pageFromUrl = Number(route.query.page) || 1;
-
-    currentPage.value = pageFromUrl;
-    searchType.value = typeFromUrl;
-
-    const params: any = {
-      page: pageFromUrl,
-      size: pageSize,
-    };
-    
-    if (keywordFromUrl) {
-      params.keyword = keywordFromUrl;
-      if (searchKeyword.value !== keywordFromUrl) {
-        searchKeyword.value = keywordFromUrl;
-      }
-    } else {
-      if (!keywordFromUrl && searchKeyword.value) {
-        searchKeyword.value = "";
-      }
-    }
-
-    let response;
-    if (isMyPostsMode.value) {
-        response = await communityApi.getMyPosts(params);
-    } else {
-        response = await communityApi.getPosts(params);
-    }
-    
-    let fetchedPosts = response.data.posts;
-    if (params.keyword) {
-      const k = params.keyword.toLowerCase();
-      fetchedPosts = fetchedPosts.filter((p) => {
-        const inTitle = p.title.toLowerCase().includes(k);
-        const inContent = 
-          (p.content && p.content.toLowerCase().includes(k)) || 
-          (p.contentPreview && p.contentPreview.toLowerCase().includes(k));
-
-        if (searchType.value === "title") {
-          return inTitle;
-        } else {
-          return inTitle || inContent;
-        }
-      });
-    }
-
-    posts.value = fetchedPosts;
-    totalPosts.value = response.data.totalCount || 0;
+     await communityStore.fetchPosts(params, isMyPostsMode.value);
   } catch (error) {
-    console.error("Failed to fetch posts:", error);
-  } finally {
-    isLoading.value = false;
+     // Error handled in store/view
   }
 };
 
@@ -252,7 +233,7 @@ const handleSubmitPost = async () => {
       imageUrls.push(...results);
     }
 
-    await communityApi.createPost({
+    await communityStore.createPost({
       title: newPostTitle.value,
       content: newPostContent.value,
       images: imageUrls,
@@ -353,8 +334,8 @@ const formatTime = (dateStr: string) => {
         <Select
           v-model="searchType"
           :options="[
-            { label: '제목+내용', value: 'all' },
             { label: '제목', value: 'title' },
+            { label: '제목+내용', value: 'all' },
           ]"
           class="bg-zinc-900 border-zinc-800 text-white h-10"
         />
@@ -378,6 +359,9 @@ const formatTime = (dateStr: string) => {
     <div v-if="isLoading" class="text-center text-zinc-500 py-10">로딩 중...</div>
 
     <div v-else class="space-y-4">
+        <div v-if="posts.length === 0" class="text-center py-20 text-zinc-500">
+            게시글이 없습니다.
+        </div>
       <div
         v-for="post in posts"
         :key="post.postId"

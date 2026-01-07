@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useUserStore } from "@/stores/user";
+import { storeToRefs } from "pinia";
 import { Upload, Save, Lock, X, Pencil } from "lucide-vue-next";
 import Button from "@/components/ui/Button.vue";
 import Input from "@/components/ui/Input.vue";
@@ -9,15 +11,14 @@ import Label from "@/components/ui/Label.vue";
 import Textarea from "@/components/ui/Textarea.vue";
 import Avatar from "@/components/ui/Avatar.vue";
 import Checkbox from "@/components/ui/Checkbox.vue";
-import userApi, { type Title as ApiTitle, type UserSummary } from "@/api/user";
-import imageApi from "@/api/image";
-import communityApi from "@/api/community"; // communityApi import added
+import { type Title as ApiTitle, type UserSummary } from "@/api/user";
 
 const router = useRouter();
 const authStore = useAuthStore();
+const userStore = useUserStore();
+const { myPage, myPostCount, followList, isLoading } = storeToRefs(userStore);
 
-// UI uses a local interface for badges, let's adapt API Title to this or use it directly
-// The UI expects: id, name, description, icon, difficulty, acquired, acquiredDate
+// Interface for UI Badges
 interface Badge {
   id: string;
   name: string;
@@ -28,9 +29,7 @@ interface Badge {
   acquiredDate?: string;
 }
 
-const isLoading = ref(true);
-
-// Profile State
+// Local Editor State (synced with Store on mount/fetch)
 const profileImage = ref<string>("");
 const nickname = ref("");
 const email = ref("");
@@ -39,19 +38,13 @@ const userId = ref<number>(0);
 const createdAt = ref("");
 const selectedFile = ref<File | null>(null);
 
-// Original Data for Diffing
+// Original Data for Diffing (Dirty Check)
 const originalBasicInfo = ref({
   username: "",
   introduction: "",
   profileImageUrl: "",
 });
-
 const originalHealthInfo = ref<any>({});
-
-// Follow Stats
-const followersCount = ref(0);
-const followingsCount = ref(0);
-const myPostCount = ref(0); // Added myPostCount state
 
 // Health Info State
 const height = ref("");
@@ -59,14 +52,9 @@ const weight = ref("");
 const targetWeight = ref("");
 const diseases = ref<string[]>([]);
 const otherDisease = ref("");
-const goals = ref<string[]>([]); // UI allows multiple, API returns single string? Assuming mapping or single
+const goals = ref<string[]>([]);
 const otherGoal = ref("");
-const activityLevel = ref("medium");
-
-// Badge Data
-const badges = ref<Badge[]>([]);
-const currentTitleId = ref<number | null>(null);
-const currentTitleName = ref<string | null>(null);
+const activityLevel = ref("MODERATE");
 
 const diseaseOptions = [
   { id: "diabetes", label: "당뇨" },
@@ -83,7 +71,7 @@ const goalOptions = [
   { id: "other", label: "기타" },
 ];
 
-// Mapping helper for goals (Korean name <-> English ID)
+// Mapping helper
 const goalMap: Record<string, string> = {
   "체중 감량": "weight-loss",
   "체중 유지": "maintain",
@@ -92,137 +80,94 @@ const goalMap: Record<string, string> = {
 };
 
 const activityOptions = [
-  {
-    id: "LOW",
-    label: "낮음",
-    description: "하루 대부분 앉아서 생활해요",
-  },
-  {
-    id: "MODERATE",
-    label: "보통",
-    description: "가벼운 활동이나 주 1~2회 운동을 해요",
-  },
-  {
-    id: "HIGH",
-    label: "높음",
-    description: "하루 활동량이 많거나 주 3회 이상 운동해요",
-  },
+  { id: "LOW", label: "낮음", description: "하루 대부분 앉아서 생활해요" },
+  { id: "MODERATE", label: "보통", description: "가벼운 활동이나 주 1~2회 운동을 해요" },
+  { id: "HIGH", label: "높음", description: "하루 활동량이 많거나 주 3회 이상 운동해요" },
 ];
 
-const fetchMyPageData = async () => {
+// --- Badges & Follow Counts Computed ---
+const badges = computed<Badge[]>(() => {
+  if (!myPage.value) return [];
+  return myPage.value.badges.titles.map((t) => ({
+    id: t.titleId.toString(),
+    name: t.name,
+    description: t.description,
+    icon: t.iconEmoji,
+    difficulty: t.difficultyName,
+    acquired: true,
+    acquiredDate: t.obtainedAt ? t.obtainedAt.split("T")[0] : "",
+  }));
+});
+
+const currentTitleId = computed(() => myPage.value?.badges.currentTitleId || null);
+const currentTitleName = computed(() => myPage.value?.badges.currentTitleName || null);
+const followersCount = computed(() => myPage.value?.follow.followersCount || 0);
+const followingsCount = computed(() => myPage.value?.follow.followingsCount || 0);
+
+// --- Fetch & Populate ---
+const initMyPage = async () => {
   try {
-    isLoading.value = true;
-    const res = await userApi.getMyPage();
-    const data = res.data;
+    await userStore.fetchMyPage();
+    if (myPage.value) {
+      const data = myPage.value;
+      // Populate Local State
+      userId.value = data.basic.userId;
+      email.value = data.basic.email;
+      nickname.value = data.basic.username;
+      profileImage.value = data.basic.profileImageUrl;
+      bio.value = data.basic.introduction || "";
+      createdAt.value = data.basic.createdAt;
 
-    // Basic Info
-    userId.value = data.basic.userId;
-    email.value = data.basic.email;
-    nickname.value = data.basic.username;
+      originalBasicInfo.value = {
+        username: data.basic.username,
+        introduction: data.basic.introduction || "",
+        profileImageUrl: data.basic.profileImageUrl,
+      };
 
-    let imgUrl = data.basic.profileImageUrl;
-    // 기존 DB 데이터에 이중 도메인이 포함된 경우가 있어 클라이언트에서 임시로 처리
-    const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
-    if (imgUrl) {
-      if (imgUrl.includes(cdnDomain + cdnDomain)) {
-        imgUrl = imgUrl.replace(cdnDomain + cdnDomain, cdnDomain);
-      } else if (!imgUrl.startsWith("http")) {
-        const cleanKey = imgUrl.startsWith("/") ? imgUrl.slice(1) : imgUrl;
-        imgUrl = `${cdnDomain}${cleanKey}`;
+      // Health
+      const h = data.health;
+      height.value = h.height?.toString() || "";
+      weight.value = h.weight?.toString() || "";
+      targetWeight.value = h.goalWeight?.toString() || "";
+      activityLevel.value = h.activityLevel || "MODERATE";
+
+      originalHealthInfo.value = { ...h };
+
+      // Map Diseases
+      const dList = [];
+      if (h.hasDiabetes) dList.push("diabetes");
+      if (h.hasHypertension) dList.push("hypertension");
+      if (h.hasHyperlipidemia) dList.push("hyperlipidemia");
+      if (h.otherDisease) {
+        dList.push("other");
+        otherDisease.value = h.otherDisease;
       }
-    }
-    profileImage.value = imgUrl;
+      diseases.value = dList;
 
-    bio.value = data.basic.introduction || "";
-    createdAt.value = data.basic.createdAt;
-
-    // Save original for diffing
-    originalBasicInfo.value = {
-      username: data.basic.username,
-      introduction: data.basic.introduction || "",
-      profileImageUrl: data.basic.profileImageUrl,
-    };
-
-    // Health Info
-    const h = data.health;
-    height.value = h.height?.toString() || "";
-    weight.value = h.weight?.toString() || "";
-    targetWeight.value = h.goalWeight?.toString() || "";
-    activityLevel.value = h.activityLevel || "MODERATE";
-
-    // Save original health for diffing
-    originalHealthInfo.value = { ...h };
-
-    // Map boolean diseases to array
-    const dList = [];
-    if (h.hasDiabetes) dList.push("diabetes");
-    if (h.hasHypertension) dList.push("hypertension");
-    if (h.hasHyperlipidemia) dList.push("hyperlipidemia");
-    if (h.otherDisease) {
-      dList.push("other");
-      otherDisease.value = h.otherDisease;
-    }
-    diseases.value = dList;
-
-    // Map goal string to array
-    goals.value = [];
-    if (h.goal) {
-      // Try to match specific keys first
-      const foundKey = Object.keys(goalMap).find((key) => h.goal === key);
-      if (foundKey) {
-        goals.value.push(goalMap[foundKey]);
-      } else {
-        // assume 'other' or custom
-        if (Object.values(goalMap).includes(h.goal)) {
-          // if API returned english ID
-          goals.value.push(h.goal);
+      // Map Goals
+      goals.value = [];
+      if (h.goal) {
+        const foundKey = Object.keys(goalMap).find((key) => h.goal === key);
+        if (foundKey) {
+          goals.value.push(goalMap[foundKey]);
         } else {
-          goals.value.push("other");
-          otherGoal.value = h.goal;
+          if (Object.values(goalMap).includes(h.goal)) {
+            goals.value.push(h.goal);
+          } else {
+            goals.value.push("other");
+            otherGoal.value = h.goal;
+          }
         }
       }
     }
-
-    // Badges
-    currentTitleId.value = data.badges.currentTitleId;
-    currentTitleName.value = data.badges.currentTitleName;
-
-    // Map API titles to UI Badge interface
-    // API returns only ACQUIRED titles usually?
-    badges.value = data.badges.titles.map((t: ApiTitle) => ({
-      id: t.titleId.toString(),
-      name: t.name,
-      description: t.description,
-      icon: t.iconEmoji,
-      difficulty: t.difficultyName,
-      acquired: true, // If returned by API as obtained
-      acquiredDate: t.obtainedAt ? t.obtainedAt.split("T")[0] : "",
-    }));
-
-    // Follow
-    followersCount.value = data.follow.followersCount;
-    followingsCount.value = data.follow.followingsCount;
-
-    // My Posts Count
-    try {
-        const postRes = await communityApi.getMyPosts({ size: 1 }); // size 1 to minimize data
-        myPostCount.value = postRes.data.totalCount || 0;
-    } catch (e) {
-        console.error("Failed to fetch my posts count:", e);
-    }
   } catch (error) {
-    console.error("Failed to fetch my page:", error);
-    // alert("정보를 불러오는데 실패했습니다.");
-  } finally {
-    isLoading.value = false;
+    // Already logged in store
   }
 };
 
 onMounted(() => {
-  fetchMyPageData();
+  initMyPage();
 });
-
-// ... existing code ...
 
 const handleProfileImageUpload = (e: Event) => {
   const target = e.target as HTMLInputElement;
@@ -262,25 +207,18 @@ const handleProfileSave = async () => {
 
     // 1. Image Upload
     if (selectedFile.value) {
-      const { data: presign } = await imageApi.getPresignedUrl({
-        purpose: "PROFILE",
-        fileName: selectedFile.value.name,
-        contentType: selectedFile.value.type,
-      });
-
-      await imageApi.uploadToS3(presign.presignedUrl, selectedFile.value);
-      // Send objectKey instead of full URL to avoid backend double-prefixing
-      payload.profileImageUrl = presign.objectKey;
+      const objectKey = await userStore.uploadProfileImage(selectedFile.value);
+      payload.profileImageUrl = objectKey;
       hasChanges = true;
     }
 
-    // 2. Nickname Change
+    // 2. Nickname
     if (nickname.value !== originalBasicInfo.value.username) {
       payload.username = nickname.value;
       hasChanges = true;
     }
 
-    // 3. Bio Change
+    // 3. Bio
     if (bio.value !== originalBasicInfo.value.introduction) {
       payload.introduction = bio.value;
       hasChanges = true;
@@ -291,24 +229,19 @@ const handleProfileSave = async () => {
       return;
     }
 
-    await userApi.updateMyBasicInfo(payload);
-
-    // Update original to new state
+    await userStore.updateMyBasicInfo(payload);
+    
+    // Update original state to reflect new saved state
+    // Note: store returns void, but updates store state.
+    // We update our local 'original' refs for next diff
     if (payload.username) originalBasicInfo.value.username = payload.username;
     if (payload.introduction) originalBasicInfo.value.introduction = payload.introduction;
-    if (payload.profileImageUrl) originalBasicInfo.value.profileImageUrl = payload.profileImageUrl;
-
-    // Update Auth Store
-    const updates: any = {};
-    if (payload.username) updates.username = payload.username;
-
     if (payload.profileImageUrl) {
-      const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
-      // payload has objectKey, store complete URL
-      updates.profileImageUrl = `${cdnDomain}${payload.profileImageUrl}`;
+        // If we uploaded (objectKey), the store state profileImageUrl will be updated to full URL by logic in store.
+        // We can grab it from store or just assume success.
+        // Ideally we grab it from store to update originalBasicInfo correctly
+        if (myPage.value) originalBasicInfo.value.profileImageUrl = myPage.value.basic.profileImageUrl;
     }
-
-    authStore.updateUser(updates);
 
     alert("프로필이 저장되었습니다.");
     selectedFile.value = null;
@@ -316,7 +249,6 @@ const handleProfileSave = async () => {
     if (e.response?.status === 409) {
       alert("이미 사용 중인 닉네임입니다.");
     } else {
-      console.error(e);
       alert("프로필 저장 실패");
     }
   }
@@ -329,16 +261,12 @@ const handleHealthInfoSave = async () => {
   const found = standardGoals.find((g) => goals.value.includes(g));
 
   if (found) {
-    // Find Korean label or use mapped value
-    // API expects Korean string? "goal": "체지방 감량"
-    // goalMap keys are Korean: {'체중 감량': 'weight-loss'}
-    // We need to reverse map: 'weight-loss' -> '체중 감량'
     selectedGoal = Object.keys(goalMap).find((key) => goalMap[key] === found) || found;
   } else if (goals.value.includes("other")) {
     selectedGoal = otherGoal.value;
   }
 
-  // 2. Construct current data object to compare with API structure
+  // 2. Construct current data object
   const currentData = {
     height: Number(height.value),
     weight: Number(weight.value),
@@ -356,46 +284,17 @@ const handleHealthInfoSave = async () => {
   const original = originalHealthInfo.value;
   let hasChanges = false;
 
-  if (currentData.height !== original.height) {
-    payload.height = currentData.height;
-    hasChanges = true;
-  }
-  if (currentData.weight !== original.weight) {
-    payload.weight = currentData.weight;
-    hasChanges = true;
-  }
-  if (currentData.goalWeight !== original.goalWeight) {
-    payload.goalWeight = currentData.goalWeight;
-    hasChanges = true;
-  }
-  if (currentData.activityLevel !== original.activityLevel) {
-    payload.activityLevel = currentData.activityLevel;
-    hasChanges = true;
-  }
+  if (currentData.height !== original.height) { payload.height = currentData.height; hasChanges = true; }
+  if (currentData.weight !== original.weight) { payload.weight = currentData.weight; hasChanges = true; }
+  if (currentData.goalWeight !== original.goalWeight) { payload.goalWeight = currentData.goalWeight; hasChanges = true; }
+  if (currentData.activityLevel !== original.activityLevel) { payload.activityLevel = currentData.activityLevel; hasChanges = true; }
 
-  if (currentData.hasDiabetes !== original.hasDiabetes) {
-    payload.hasDiabetes = currentData.hasDiabetes;
-    hasChanges = true;
-  }
-  if (currentData.hasHypertension !== original.hasHypertension) {
-    payload.hasHypertension = currentData.hasHypertension;
-    hasChanges = true;
-  }
-  if (currentData.hasHyperlipidemia !== original.hasHyperlipidemia) {
-    payload.hasHyperlipidemia = currentData.hasHyperlipidemia;
-    hasChanges = true;
-  }
+  if (currentData.hasDiabetes !== original.hasDiabetes) { payload.hasDiabetes = currentData.hasDiabetes; hasChanges = true; }
+  if (currentData.hasHypertension !== original.hasHypertension) { payload.hasHypertension = currentData.hasHypertension; hasChanges = true; }
+  if (currentData.hasHyperlipidemia !== original.hasHyperlipidemia) { payload.hasHyperlipidemia = currentData.hasHyperlipidemia; hasChanges = true; }
 
-  // For nullable strings, handle carefully
-  if (currentData.otherDisease !== original.otherDisease) {
-    payload.otherDisease = currentData.otherDisease;
-    hasChanges = true;
-  }
-
-  if (currentData.goal !== original.goal) {
-    payload.goal = currentData.goal;
-    hasChanges = true;
-  }
+  if (currentData.otherDisease !== original.otherDisease) { payload.otherDisease = currentData.otherDisease; hasChanges = true; }
+  if (currentData.goal !== original.goal) { payload.goal = currentData.goal; hasChanges = true; }
 
   if (!hasChanges) {
     alert("변경 사항이 없습니다.");
@@ -403,14 +302,10 @@ const handleHealthInfoSave = async () => {
   }
 
   try {
-    await userApi.updateMyHealthInfo(payload);
-
-    // Update original to new state
+    await userStore.updateMyHealthInfo(payload);
     Object.assign(originalHealthInfo.value, currentData);
-
     alert("건강 정보가 저장되었습니다.");
   } catch (e) {
-    console.error(e);
     alert("건강 정보 저장 실패");
   }
 };
@@ -440,7 +335,6 @@ const handleWithdrawalCancel = () => {
 };
 
 const handleDialogBackdropClick = (event: MouseEvent) => {
-  // 다이얼로그 배경(backdrop)을 클릭했을 때만 닫기
   if (event.target === event.currentTarget) {
     handleWithdrawalCancel();
   }
@@ -471,10 +365,8 @@ const handleWithdrawalConfirm = async () => {
     withdrawalStep.value = "done";
   } catch (error: any) {
     withdrawalErrorMessage.value = error?.message || "회원 탈퇴 중 오류가 발생했습니다.";
-    // 실패 시에는 모달을 닫지 않고 그대로 유지(재시도 가능)
   } finally {
     isWithdrawing.value = false;
-    // success일 때만 done 단계로 이동 (위 try에서 처리)
   }
 };
 
@@ -483,10 +375,10 @@ const finishWithdrawalFlow = () => {
   router.push("/");
 };
 
+// Follow Modal
 const showFollowModal = ref(false);
 const followModalType = ref<"following" | "follower">("following");
 const followModalTitle = ref("");
-const followList = ref<UserSummary[]>([]);
 const isFollowLoading = ref(false);
 
 const openFollowModal = async (type: "following" | "follower") => {
@@ -494,42 +386,10 @@ const openFollowModal = async (type: "following" | "follower") => {
   followModalType.value = type;
   followModalTitle.value = type === "following" ? "팔로잉 목록" : "팔로워 목록";
   isFollowLoading.value = true;
-  followList.value = [];
 
   try {
-    let res;
-    if (type === "following") {
-      res = await userApi.getMyFollowings();
-    } else {
-      res = await userApi.getMyFollowers();
-    }
-    const cdnDomain = "https://d3sn2183nped6z.cloudfront.net/";
-
-    // Helper to sanitize URL
-    const sanitizeUrl = (url: string | null) => {
-      if (!url) return undefined;
-      // console.log('Raw profile URL:', url);
-
-      // 1. Handle double domain
-      if (url.includes(cdnDomain + cdnDomain)) {
-        return url.replace(cdnDomain + cdnDomain, cdnDomain);
-      }
-      // 2. Handle relative path (key only)
-      if (!url.startsWith("http")) {
-        // Ensure no leading slash if domain has trailing slash (it does)
-        // But if url starts with /, remove it
-        const cleanKey = url.startsWith("/") ? url.slice(1) : url;
-        return `${cdnDomain}${cleanKey}`;
-      }
-      return url;
-    };
-
-    followList.value = res.data.users.map((u: any) => ({
-      ...u,
-      profileImageUrl: sanitizeUrl(u.profileImageUrl),
-    }));
+    await userStore.fetchFollowList(type);
   } catch (e) {
-    console.error(e);
     alert(`${followModalTitle.value}을 불러오지 못했습니다.`);
   } finally {
     isFollowLoading.value = false;
@@ -538,7 +398,6 @@ const openFollowModal = async (type: "following" | "follower") => {
 
 const closeFollowModal = () => {
   showFollowModal.value = false;
-  followList.value = [];
 };
 
 const handleSetTitle = async (badge: Badge) => {
@@ -546,18 +405,12 @@ const handleSetTitle = async (badge: Badge) => {
     alert("획득하지 않은 뱃지입니다.");
     return;
   }
-  if (String(badge.id) === String(currentTitleId.value)) {
-    // Already selected
-    return;
-  }
+  if (String(badge.id) === String(currentTitleId.value)) return;
 
   try {
-    await userApi.updateMyCurrentTitle(Number(badge.id));
-    currentTitleId.value = Number(badge.id);
-    currentTitleName.value = badge.name;
+    await userStore.updateMyCurrentTitle(Number(badge.id), badge.name);
     alert(`'${badge.name}' 뱃지가 대표 뱃지로 설정되었습니다.`);
   } catch (e) {
-    console.error(e);
     alert("대표 뱃지 설정 실패");
   }
 };
@@ -566,29 +419,23 @@ const handleUnsetTitle = async () => {
   if (!confirm("대표 뱃지를 해제하시겠습니까?")) return;
 
   try {
-    await userApi.updateMyCurrentTitle(null);
-    currentTitleId.value = null;
-    currentTitleName.value = null;
+    await userStore.updateMyCurrentTitle(null);
     alert("대표 뱃지가 해제되었습니다.");
   } catch (e) {
-    console.error(e);
     alert("뱃지 해제 실패");
   }
 };
 
 const getDifficultyColor = (difficulty: string) => {
   switch (difficulty) {
-    case "초급":
-      return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-    case "중급":
-      return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-    case "고급":
-      return "bg-purple-500/20 text-purple-400 border-purple-500/30";
-    default:
-      return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
+    case "초급": return "bg-blue-500/20 text-blue-400 border-blue-500/30";
+    case "중급": return "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+    case "고급": return "bg-purple-500/20 text-purple-400 border-purple-500/30";
+    default: return "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
   }
 };
 </script>
+
 
 <template>
   <div v-if="isLoading" class="flex justify-center py-20">

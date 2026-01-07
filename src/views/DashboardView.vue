@@ -14,10 +14,6 @@ import Dialog from "@/components/ui/Dialog.vue";
 const router = useRouter();
 const dietStore = useDietStore();
 
-const navigateTo = (path: string) => {
-  router.push(path);
-};
-
 // --- Daily Stats (Reactive for real-time updates) ---
 const dailyStats = reactive({
   intakeCalories: 0,
@@ -454,17 +450,25 @@ const fetchDailyExercises = async (targetDate: string) => {
 
     dailyStats.exerciseCalories = totalCalories;
     dailyStats.exerciseTime = Math.round(totalTime);
-  } catch (e) {
-    console.error("Failed to fetch exercise records", e);
     // Don't clear timeline here, as it might clear diet items too if not careful,
     // but usually fine as we rebuild timeline above.
     // To be safe, just clear exercise part? Actually safer to leave existing or empty.
+  } catch (e) {
+    console.error("Failed to fetch exercise records", e);
   }
 };
 
-watch(currentDate, (newDate) => {
-  fetchDailyDiets(newDate);
-  fetchDailyExercises(newDate);
+watch(currentDate, async (newDate) => {
+  await fetchDailyDiets(newDate);
+  await fetchDailyExercises(newDate);
+
+  // Scroll to bottom only when date changes
+  setTimeout(() => {
+    const mainContent = document.getElementById("main-content");
+    if (mainContent) {
+      mainContent.scrollTo({ top: mainContent.scrollHeight, behavior: "smooth" });
+    }
+  }, 300);
 });
 
 const handleDeleteDiet = async (dietId: number) => {
@@ -518,9 +522,10 @@ const loadMealPlan = async () => {
   }
 };
 
-onMounted(() => {
-  fetchDailyDiets(currentDate.value);
-  fetchDailyExercises(currentDate.value);
+onMounted(async () => {
+  await fetchDailyDiets(currentDate.value);
+  await fetchDailyExercises(currentDate.value);
+  
   loadMealPlan();
   fetchMyChallenges();
 });
@@ -871,10 +876,10 @@ const handleDeleteDetail = async () => {
         </div>
 
         <div class="flex gap-3">
-          <Button @click="navigateTo('/meal-register')" class="bg-emerald-500 hover:bg-emerald-600 text-white">
+          <Button @click="router.push({ path: '/meal-register', query: { date: currentDate } })" class="bg-emerald-500 hover:bg-emerald-600 text-white">
             식단 추가하기
           </Button>
-          <Button @click="navigateTo('/exercise-register')" class="bg-blue-500 hover:bg-blue-600 text-white">
+          <Button @click="router.push({ path: '/exercise-register', query: { date: currentDate } })" class="bg-blue-500 hover:bg-blue-600 text-white">
             운동 추가하기
           </Button>
         </div>
